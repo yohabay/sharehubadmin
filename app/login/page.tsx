@@ -21,6 +21,10 @@ export default function LoginPage() {
     setError('')
 
     try {
+      if (!supabase) {
+        throw new Error('Supabase client not initialized. Please check environment configuration.')
+      }
+
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -35,6 +39,7 @@ export default function LoginPage() {
         throw new Error('Session not available')
       }
     } catch (err: any) {
+      console.error('Login error:', err)
       setError(err.message || 'Login failed')
     } finally {
       setLoading(false)

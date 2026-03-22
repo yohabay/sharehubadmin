@@ -1,6 +1,19 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+
+// Global error handler for uncaught promise rejections
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (event) => {
+    console.error('Unhandled promise rejection:', event.reason)
+    event.preventDefault()
+  })
+
+  window.onerror = (message, source, lineno, colno, error) => {
+    console.error('Global error:', { message, source, lineno, colno, error })
+    return false
+  }
+}
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { 
@@ -184,31 +197,42 @@ export default function AdminPanel() {
   
   // Pagination
   const [currentPageNum, setCurrentPageNum] = useState(1)
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true)
   const itemsPerPage = 10
 
   // Check authentication
   useEffect(() => {
-    try {
-      const session = localStorage.getItem('admin_session')
-      if (!session || session === 'null' || session === 'undefined') {
+    const checkAuth = () => {
+      try {
+        const session = localStorage.getItem('admin_session')
+        if (!session || session === 'null' || session === 'undefined' || session === 'null') {
+          router.push('/login')
+          return
+        }
+        const parsedSession = JSON.parse(session)
+        if (!parsedSession || !parsedSession.access_token) {
+          router.push('/login')
+          return
+        }
+        setIsAuthenticated(true)
+      } catch (error) {
+        console.error('Session parsing error:', error)
+        localStorage.removeItem('admin_session')
         router.push('/login')
-        return
+      } finally {
+        setIsLoadingAuth(false)
       }
-      const parsedSession = JSON.parse(session)
-      if (!parsedSession || !parsedSession.access_token) {
-        router.push('/login')
-        return
-      }
-      setIsAuthenticated(true)
-    } catch (error) {
-      console.error('Session parsing error:', error)
-      localStorage.removeItem('admin_session')
-      router.push('/login')
     }
+    checkAuth()
   }, [router])
 
   // Fetch data from Supabase
   const fetchData = useCallback(async () => {
+    if (!supabase) {
+      console.error('Supabase client not initialized')
+      setLoading(false)
+      return
+    }
     setLoading(true)
     try {
       // Fetch profiles
@@ -529,12 +553,12 @@ export default function AdminPanel() {
   // Get post by ID
   const getPostById = (id: string) => posts.find(p => p.id === id)
 
-  // Redirect if not authenticated
-  if (!isAuthenticated) {
+  // Show loading while checking authentication
+  if (isLoadingAuth || !isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
-          <div className="spinner mx-auto mb-4"></div>
+          <div className="w-12 h-12 border-4 border-blue-600/30 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-slate-500">Loading...</p>
         </div>
       </div>
