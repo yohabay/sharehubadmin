@@ -28,9 +28,11 @@ export default function LoginPage() {
 
       if (signInError) throw signInError
 
-      if (data.user) {
+      if (data.user && data.session) {
         localStorage.setItem('admin_session', JSON.stringify(data.session))
         router.push('/')
+      } else {
+        throw new Error('Session not available')
       }
     } catch (err: any) {
       setError(err.message || 'Login failed')

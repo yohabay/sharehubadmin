@@ -188,12 +188,23 @@ export default function AdminPanel() {
 
   // Check authentication
   useEffect(() => {
-    const session = localStorage.getItem('admin_session')
-    if (!session) {
+    try {
+      const session = localStorage.getItem('admin_session')
+      if (!session || session === 'null' || session === 'undefined') {
+        router.push('/login')
+        return
+      }
+      const parsedSession = JSON.parse(session)
+      if (!parsedSession || !parsedSession.access_token) {
+        router.push('/login')
+        return
+      }
+      setIsAuthenticated(true)
+    } catch (error) {
+      console.error('Session parsing error:', error)
+      localStorage.removeItem('admin_session')
       router.push('/login')
-      return
     }
-    setIsAuthenticated(true)
   }, [router])
 
   // Fetch data from Supabase
