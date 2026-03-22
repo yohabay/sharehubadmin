@@ -2,7 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@supabase/supabase-js';
+
+// Create client with fallback values
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fbmvuhcrvswbttbhioux.supabase.co'
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZibXZ1aGNydnN3YnR0Ymhpb3V4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3ODIzMzcsImV4cCI6MjA3OTM1ODMzN30.7RYZa52neesxSUJ8vKbWD-MUGIa1hj0-za2fjxv0Cwo'
+const supabase = createClient(supabaseUrl, supabaseAnonKey)
 import { 
   ArrowLeft, Heart, MessageSquare, Share2, MapPin, 
   Calendar, Edit, Trash2, CheckCircle, XCircle, Eye,
@@ -65,8 +70,6 @@ export default function PostDetailPage() {
     status: 'active',
   });
 
-  const supabaseClient = supabase!;
-
   useEffect(() => {
     if (postId) {
       fetchPost();
@@ -77,14 +80,14 @@ export default function PostDetailPage() {
   async function fetchPost() {
     setLoading(true);
     
-    const { data: postData } = await supabaseClient
+    const { data: postData } = await supabase
       .from('posts')
       .select('*')
       .eq('id', postId)
       .single();
 
     if (postData) {
-      const { data: userData } = await supabaseClient
+      const { data: userData } = await supabase
         .from('profiles')
         .select('display_name, avatar_url, verified, rating')
         .eq('id', postData.user_id)
@@ -104,7 +107,7 @@ export default function PostDetailPage() {
   }
 
   async function fetchComments() {
-    const { data } = await supabaseClient
+    const { data } = await supabase
       .from('comments')
       .select('*')
       .eq('post_id', postId)
@@ -113,7 +116,7 @@ export default function PostDetailPage() {
     if (data) {
       const commentsWithUsers = await Promise.all(
         data.map(async (comment) => {
-          const { data: userData } = await supabaseClient
+          const { data: userData } = await supabase
             .from('profiles')
             .select('display_name, avatar_url')
             .eq('id', comment.user_id)
@@ -127,7 +130,7 @@ export default function PostDetailPage() {
 
   async function handleSave() {
     setSaving(true);
-    const { error } = await supabaseClient
+    const { error } = await supabase
       .from('posts')
       .update({
         title: formData.title,
@@ -148,7 +151,7 @@ export default function PostDetailPage() {
 
   async function handleStatusChange(newStatus: string) {
     setFormData({ ...formData, status: newStatus });
-    await supabaseClient
+    await supabase
       .from('posts')
       .update({ status: newStatus })
       .eq('id', postId);
@@ -157,7 +160,7 @@ export default function PostDetailPage() {
 
   async function handleDelete() {
     setSaving(true);
-    const { error } = await supabaseClient
+    const { error } = await supabase
       .from('posts')
       .delete()
       .eq('id', postId);

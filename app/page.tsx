@@ -49,7 +49,8 @@ import {
   Legend, 
   ArcElement,
   PointElement,
-  LineElement
+  LineElement,
+  Filler
 } from 'chart.js'
 import { Bar, Doughnut, Line } from 'react-chartjs-2'
 import { createClient } from '@supabase/supabase-js'
@@ -64,7 +65,8 @@ ChartJS.register(
   Legend, 
   ArcElement,
   PointElement,
-  LineElement
+  LineElement,
+  Filler
 )
 
 // Supabase client - use environment variables

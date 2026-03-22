@@ -2,7 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fbmvuhcrvswbttbhioux.supabase.co'
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZibXZ1aGNydnN3YnR0Ymhpb3V4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3ODIzMzcsImV4cCI6MjA3OTM1ODMzN30.7RYZa52neesxSUJ8vKbWD-MUGIa1hj0-za2fjxv0Cwo'
+const supabase = createClient(supabaseUrl, supabaseAnonKey)
 import { 
   ArrowLeft, User, CheckCircle, XCircle, 
   MessageSquare, Trash2, Send, Calendar, Mail,
@@ -38,8 +42,6 @@ export default function MessageDetailPage() {
   const [saving, setSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const supabaseClient = supabase!;
-
   useEffect(() => {
     if (messageId) {
       fetchMessage();
@@ -49,20 +51,20 @@ export default function MessageDetailPage() {
   async function fetchMessage() {
     setLoading(true);
     
-    const { data } = await supabaseClient
+    const { data } = await supabase
       .from('messages')
       .select('*')
       .eq('id', messageId)
       .single();
 
     if (data) {
-      const { data: senderData } = await supabaseClient
+      const { data: senderData } = await supabase
         .from('profiles')
         .select('display_name, avatar_url, verified')
         .eq('id', data.sender_id)
         .single();
 
-      const { data: receiverData } = await supabaseClient
+      const { data: receiverData } = await supabase
         .from('profiles')
         .select('display_name, avatar_url, verified')
         .eq('id', data.receiver_id)
@@ -79,7 +81,7 @@ export default function MessageDetailPage() {
 
   async function handleMarkAsRead() {
     setSaving(true);
-    await supabaseClient
+    await supabase
       .from('messages')
       .update({ read: true })
       .eq('id', messageId);
@@ -90,7 +92,7 @@ export default function MessageDetailPage() {
 
   async function handleMarkAsUnread() {
     setSaving(true);
-    await supabaseClient
+    await supabase
       .from('messages')
       .update({ read: false })
       .eq('id', messageId);
@@ -101,7 +103,7 @@ export default function MessageDetailPage() {
 
   async function handleDelete() {
     setSaving(true);
-    const { error } = await supabaseClient
+    const { error } = await supabase
       .from('messages')
       .delete()
       .eq('id', messageId);

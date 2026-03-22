@@ -2,7 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fbmvuhcrvswbttbhioux.supabase.co'
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZibXZ1aGNydnN3YnR0Ymhpb3V4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3ODIzMzcsImV4cCI6MjA3OTM1ODMzN30.7RYZa52neesxSUJ8vKbWD-MUGIa1hj0-za2fjxv0Cwo'
+const supabase = createClient(supabaseUrl, supabaseAnonKey)
 import { 
   ArrowLeft, User, CheckCircle, Trash2, 
   Calendar, MessageSquare, Edit, Save, X,
@@ -40,8 +44,6 @@ export default function CommentDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [editContent, setEditContent] = useState('');
 
-  const supabaseClient = supabase!;
-
   useEffect(() => {
     if (commentId) {
       fetchComment();
@@ -51,20 +53,20 @@ export default function CommentDetailPage() {
   async function fetchComment() {
     setLoading(true);
     
-    const { data } = await supabaseClient
+    const { data } = await supabase
       .from('comments')
       .select('*')
       .eq('id', commentId)
       .single();
 
     if (data) {
-      const { data: userData } = await supabaseClient
+      const { data: userData } = await supabase
         .from('profiles')
         .select('display_name, avatar_url, verified')
         .eq('id', data.user_id)
         .single();
 
-      const { data: postData } = await supabaseClient
+      const { data: postData } = await supabase
         .from('posts')
         .select('title, type, status')
         .eq('id', data.post_id)
@@ -78,7 +80,7 @@ export default function CommentDetailPage() {
 
   async function handleSave() {
     setSaving(true);
-    const { error } = await supabaseClient
+    const { error } = await supabase
       .from('comments')
       .update({ content: editContent })
       .eq('id', commentId);
@@ -92,7 +94,7 @@ export default function CommentDetailPage() {
 
   async function handleDelete() {
     setSaving(true);
-    const { error } = await supabaseClient
+    const { error } = await supabase
       .from('comments')
       .delete()
       .eq('id', commentId);
