@@ -56,6 +56,7 @@ export default function PostDetailPage() {
   const [editing, setEditing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [commentToDelete, setCommentToDelete] = useState<string | null>(null);
   const categories = [
     'Phones',
     'Laptops',
@@ -173,6 +174,19 @@ export default function PostDetailPage() {
 
     if (!error) {
       router.push('/?tab=posts');
+    }
+    setSaving(false);
+  }
+
+  async function handleDeleteComment(commentId: string) {
+    setSaving(true);
+    const { error } = await supabaseClient
+      .from('comments')
+      .delete()
+      .eq('id', commentId);
+
+    if (!error) {
+      fetchComments();
     }
     setSaving(false);
   }
@@ -411,8 +425,8 @@ export default function PostDetailPage() {
                 {comments.length > 0 ? (
                   <div className="space-y-4">
                     {comments.map((comment) => (
-                      <div 
-                        key={comment.id} 
+                      <div
+                        key={comment.id}
                         className="flex gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100 transition"
                         onClick={() => router.push(`/comments/${comment.id}`)}
                       >
@@ -420,13 +434,27 @@ export default function PostDetailPage() {
                           {comment.user?.display_name?.charAt(0).toUpperCase() || 'U'}
                         </div>
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-medium">{comment.user?.display_name || 'Unknown'}</span>
-                            <span className="text-slate-500 text-sm">
-                              {new Date(comment.created_at).toLocaleDateString()}
-                            </span>
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-medium">{comment.user?.display_name || 'Unknown'}</span>
+                                <span className="text-slate-500 text-sm">
+                                  {new Date(comment.created_at).toLocaleDateString()}
+                                </span>
+                              </div>
+                              <p className="text-slate-700">{comment.content}</p>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCommentToDelete(comment.id);
+                              }}
+                              className="p-2 hover:bg-red-100 text-red-600 rounded-lg transition ml-2 flex-shrink-0"
+                              title="Delete comment"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
-                          <p className="text-slate-700">{comment.content}</p>
                         </div>
                       </div>
                     ))}
@@ -595,6 +623,43 @@ export default function PostDetailPage() {
                 </button>
                 <button
                   onClick={handleDelete}
+                  disabled={saving}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 disabled:opacity-50"
+                >
+                  {saving ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Comment Confirmation Modal */}
+      {commentToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+            <div className="text-center">
+              <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+                <Trash2 className="w-8 h-8 text-red-600" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Delete Comment?</h3>
+              <p className="text-slate-600 mb-6">
+                This will permanently delete this comment. This action cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setCommentToDelete(null)}
+                  className="flex-1 px-4 py-2 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (commentToDelete) {
+                      handleDeleteComment(commentToDelete);
+                      setCommentToDelete(null);
+                    }
+                  }}
                   disabled={saving}
                   className="flex-1 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 disabled:opacity-50"
                 >
