@@ -1,19 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-
-// Global error handler for uncaught promise rejections
-if (typeof window !== 'undefined') {
-  window.addEventListener('unhandledrejection', (event) => {
-    console.error('Unhandled promise rejection:', event.reason)
-    event.preventDefault()
-  })
-
-  window.onerror = (message, source, lineno, colno, error) => {
-    console.error('Global error:', { message, source, lineno, colno, error })
-    return false
-  }
-}
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { 
@@ -49,8 +36,7 @@ import {
   Legend, 
   ArcElement,
   PointElement,
-  LineElement,
-  Filler
+  LineElement
 } from 'chart.js'
 import { Bar, Doughnut, Line } from 'react-chartjs-2'
 import { createClient } from '@supabase/supabase-js'
@@ -65,8 +51,7 @@ ChartJS.register(
   Legend, 
   ArcElement,
   PointElement,
-  LineElement,
-  Filler
+  LineElement
 )
 
 // Supabase client - use environment variables
@@ -199,42 +184,20 @@ export default function AdminPanel() {
   
   // Pagination
   const [currentPageNum, setCurrentPageNum] = useState(1)
-  const [isLoadingAuth, setIsLoadingAuth] = useState(true)
   const itemsPerPage = 10
 
   // Check authentication
   useEffect(() => {
-    const checkAuth = () => {
-      try {
-        const session = localStorage.getItem('admin_session')
-        if (!session || session === 'null' || session === 'undefined' || session === 'null') {
-          router.push('/login')
-          return
-        }
-        const parsedSession = JSON.parse(session)
-        if (!parsedSession || !parsedSession.access_token) {
-          router.push('/login')
-          return
-        }
-        setIsAuthenticated(true)
-      } catch (error) {
-        console.error('Session parsing error:', error)
-        localStorage.removeItem('admin_session')
-        router.push('/login')
-      } finally {
-        setIsLoadingAuth(false)
-      }
+    const session = localStorage.getItem('admin_session')
+    if (!session) {
+      router.push('/login')
+      return
     }
-    checkAuth()
+    setIsAuthenticated(true)
   }, [router])
 
   // Fetch data from Supabase
   const fetchData = useCallback(async () => {
-    if (!supabase) {
-      console.error('Supabase client not initialized')
-      setLoading(false)
-      return
-    }
     setLoading(true)
     try {
       // Fetch profiles
@@ -555,12 +518,12 @@ export default function AdminPanel() {
   // Get post by ID
   const getPostById = (id: string) => posts.find(p => p.id === id)
 
-  // Show loading while checking authentication
-  if (isLoadingAuth || !isAuthenticated) {
+  // Redirect if not authenticated
+  if (!isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-blue-600/30 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="spinner mx-auto mb-4"></div>
           <p className="text-slate-500">Loading...</p>
         </div>
       </div>
@@ -958,7 +921,7 @@ export default function AdminPanel() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-slate-600">{post.category || '-'}</td>
-                        <td className="px-4 py-3 text-slate-600">${post.price || 0}</td>
+                        <td className="px-4 py-3 text-slate-600">{post.price || 0} Birr</td>
                         <td className="px-4 py-3 text-slate-600">{post.likes_count || 0}</td>
                         <td className="px-4 py-3">
                           <span className={`badge ${post.status === 'active' ? 'bg-green-100 text-green-800' : post.status === 'completed' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>

@@ -21,10 +21,6 @@ export default function LoginPage() {
     setError('')
 
     try {
-      if (!supabase) {
-        throw new Error('Supabase client not initialized. Please check environment configuration.')
-      }
-
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -32,14 +28,11 @@ export default function LoginPage() {
 
       if (signInError) throw signInError
 
-      if (data.user && data.session) {
+      if (data.user) {
         localStorage.setItem('admin_session', JSON.stringify(data.session))
         router.push('/')
-      } else {
-        throw new Error('Session not available')
       }
     } catch (err: any) {
-      console.error('Login error:', err)
       setError(err.message || 'Login failed')
     } finally {
       setLoading(false)

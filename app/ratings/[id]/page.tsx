@@ -2,14 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fbmvuhcrvswbttbhioux.supabase.co'
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZibXZ1aGNydnN3YnR0Ymhpb3V4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3ODIzMzcsImV4cCI6MjA3OTM1ODMzN30.7RYZa52neesxSUJ8vKbWD-MUGIa1hj0-za2fjxv0Cwo'
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+import { supabase } from '@/lib/supabase';
 import { 
   ArrowLeft, User, CheckCircle, Trash2, 
-  Calendar, Star, Edit, Save, X, ThumbsUp
+  Calendar, Star, Edit, Save, X, ThumbsUp 
 } from 'lucide-react';
 
 interface RatingDetail {
@@ -48,6 +44,8 @@ export default function RatingDetailPage() {
     review: '',
   });
 
+  const supabaseClient = supabase!;
+
   useEffect(() => {
     if (ratingId) {
       fetchRating();
@@ -57,20 +55,20 @@ export default function RatingDetailPage() {
   async function fetchRating() {
     setLoading(true);
     
-    const { data } = await supabase
+    const { data } = await supabaseClient
       .from('ratings')
       .select('*')
       .eq('id', ratingId)
       .single();
 
     if (data) {
-      const { data: raterData } = await supabase
+      const { data: raterData } = await supabaseClient
         .from('profiles')
         .select('display_name, avatar_url, verified')
         .eq('id', data.rater_id)
         .single();
 
-      const { data: ratedUserData } = await supabase
+      const { data: ratedUserData } = await supabaseClient
         .from('profiles')
         .select('display_name, avatar_url, verified, rating')
         .eq('id', data.rated_user_id)
@@ -87,7 +85,7 @@ export default function RatingDetailPage() {
 
   async function handleSave() {
     setSaving(true);
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('ratings')
       .update({ 
         rating: editData.rating,
@@ -104,7 +102,7 @@ export default function RatingDetailPage() {
 
   async function handleDelete() {
     setSaving(true);
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('ratings')
       .delete()
       .eq('id', ratingId);

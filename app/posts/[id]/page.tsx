@@ -2,12 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
-
-// Create client with fallback values
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fbmvuhcrvswbttbhioux.supabase.co'
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZibXZ1aGNydnN3YnR0Ymhpb3V4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3ODIzMzcsImV4cCI6MjA3OTM1ODMzN30.7RYZa52neesxSUJ8vKbWD-MUGIa1hj0-za2fjxv0Cwo'
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+import { supabase } from '@/lib/supabase';
 import { 
   ArrowLeft, Heart, MessageSquare, Share2, MapPin, 
   Calendar, Edit, Trash2, CheckCircle, XCircle, Eye,
@@ -61,6 +56,15 @@ export default function PostDetailPage() {
   const [editing, setEditing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const categories = [
+    'Phones',
+    'Laptops',
+    'Headphones & Speakers',
+    'Power Banks & USB Drives',
+    'Other Electronics',
+    'Electronics',
+  ];
+
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -69,6 +73,8 @@ export default function PostDetailPage() {
     price: 0,
     status: 'active',
   });
+
+  const supabaseClient = supabase!;
 
   useEffect(() => {
     if (postId) {
@@ -80,14 +86,14 @@ export default function PostDetailPage() {
   async function fetchPost() {
     setLoading(true);
     
-    const { data: postData } = await supabase
+    const { data: postData } = await supabaseClient
       .from('posts')
       .select('*')
       .eq('id', postId)
       .single();
 
     if (postData) {
-      const { data: userData } = await supabase
+      const { data: userData } = await supabaseClient
         .from('profiles')
         .select('display_name, avatar_url, verified, rating')
         .eq('id', postData.user_id)
@@ -107,7 +113,7 @@ export default function PostDetailPage() {
   }
 
   async function fetchComments() {
-    const { data } = await supabase
+    const { data } = await supabaseClient
       .from('comments')
       .select('*')
       .eq('post_id', postId)
@@ -116,7 +122,7 @@ export default function PostDetailPage() {
     if (data) {
       const commentsWithUsers = await Promise.all(
         data.map(async (comment) => {
-          const { data: userData } = await supabase
+          const { data: userData } = await supabaseClient
             .from('profiles')
             .select('display_name, avatar_url')
             .eq('id', comment.user_id)
@@ -130,7 +136,7 @@ export default function PostDetailPage() {
 
   async function handleSave() {
     setSaving(true);
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('posts')
       .update({
         title: formData.title,
@@ -151,7 +157,7 @@ export default function PostDetailPage() {
 
   async function handleStatusChange(newStatus: string) {
     setFormData({ ...formData, status: newStatus });
-    await supabase
+    await supabaseClient
       .from('posts')
       .update({ status: newStatus })
       .eq('id', postId);
@@ -160,7 +166,7 @@ export default function PostDetailPage() {
 
   async function handleDelete() {
     setSaving(true);
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('posts')
       .delete()
       .eq('id', postId);
@@ -337,7 +343,7 @@ export default function PostDetailPage() {
                     <div className="flex items-center gap-2">
                       <DollarSign className="w-6 h-6 text-green-600" />
                       <span className="text-3xl font-bold text-green-700">
-                        ${post.price.toFixed(2)}
+                        {post.price.toFixed(2)} Birr
                       </span>
                     </div>
                   </div>
@@ -496,17 +502,14 @@ export default function PostDetailPage() {
                       className="w-full border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">Select category</option>
-                      <option value="food">Food</option>
-                      <option value="transport">Transport</option>
-                      <option value="shopping">Shopping</option>
-                      <option value="services">Services</option>
-                      <option value="home">Home</option>
-                      <option value="other">Other</option>
+                      {categories.map((cat) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Price ($)</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Price (Birr)</label>
                     <input
                       type="number"
                       value={formData.price}

@@ -2,11 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fbmvuhcrvswbttbhioux.supabase.co'
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZibXZ1aGNydnN3YnR0Ymhpb3V4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3ODIzMzcsImV4cCI6MjA3OTM1ODMzN30.7RYZa52neesxSUJ8vKbWD-MUGIa1hj0-za2fjxv0Cwo'
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+import { supabase } from '@/lib/supabase';
 import { 
   ArrowLeft, User, MapPin, Calendar, Star, 
   CheckCircle, XCircle, MessageSquare, Heart,
@@ -71,6 +67,8 @@ export default function UserDetailPage() {
     phone: '',
   });
 
+  const supabaseClient = supabase!;
+
   useEffect(() => {
     if (userId) {
       fetchUser();
@@ -80,7 +78,7 @@ export default function UserDetailPage() {
 
   async function fetchUser() {
     setLoading(true);
-    const { data } = await supabase
+    const { data } = await supabaseClient
       .from('profiles')
       .select('*')
       .eq('id', userId)
@@ -102,7 +100,7 @@ export default function UserDetailPage() {
   }
 
   async function fetchUserPosts() {
-    const { data } = await supabase
+    const { data } = await supabaseClient
       .from('posts')
       .select('id, title, description, type, category, status, likes_count, comments_count, created_at')
       .eq('user_id', userId)
@@ -114,7 +112,7 @@ export default function UserDetailPage() {
 
   async function handleSave() {
     setSaving(true);
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('profiles')
       .update({
         display_name: formData.display_name,
@@ -137,7 +135,7 @@ export default function UserDetailPage() {
   async function handleVerifyToggle() {
     const newVerified = !formData.verified;
     setFormData({ ...formData, verified: newVerified });
-    await supabase
+    await supabaseClient
       .from('profiles')
       .update({ verified: newVerified })
       .eq('id', userId);
@@ -147,7 +145,7 @@ export default function UserDetailPage() {
   async function handleAdminToggle() {
     const newAdmin = !formData.is_admin;
     setFormData({ ...formData, is_admin: newAdmin });
-    await supabase
+    await supabaseClient
       .from('profiles')
       .update({ is_admin: newAdmin })
       .eq('id', userId);
@@ -156,7 +154,7 @@ export default function UserDetailPage() {
 
   async function handleDelete() {
     setSaving(true);
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('profiles')
       .delete()
       .eq('id', userId);
