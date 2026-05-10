@@ -73,7 +73,9 @@ export default function PostDetailPage() {
     location: '',
     price: 0,
     status: 'active',
+    images: [] as string[],
   });
+  const [uploadingImages, setUploadingImages] = useState(false);
 
   const supabaseClient = supabase!;
 
@@ -108,6 +110,7 @@ export default function PostDetailPage() {
         location: postData.location || '',
         price: postData.price || 0,
         status: postData.status || 'active',
+        images: postData.images || [],
       });
     }
     setLoading(false);
@@ -146,6 +149,7 @@ export default function PostDetailPage() {
         location: formData.location,
         price: formData.price,
         status: formData.status,
+        images: formData.images,
       })
       .eq('id', postId);
 
@@ -189,6 +193,48 @@ export default function PostDetailPage() {
       fetchComments();
     }
     setSaving(false);
+  }
+
+  async function handleImageUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploadingImages(true);
+    const newImages: string[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+      const filePath = `posts/${fileName}`;
+
+      const { data, error } = await supabaseClient.storage
+        .from('images')
+        .upload(filePath, file);
+
+      if (error) {
+        console.error('Error uploading image:', error);
+        continue;
+      }
+
+      const { data: urlData } = supabaseClient.storage
+        .from('images')
+        .getPublicUrl(filePath);
+
+      if (urlData.publicUrl) {
+        newImages.push(urlData.publicUrl);
+      }
+    }
+
+    setFormData(prev => ({ ...prev, images: [...prev.images, ...newImages] }));
+    setUploadingImages(false);
+  }
+
+  function handleRemoveImage(index: number) {
+    setFormData(prev => ({
+      ...prev,
+      images: prev.images.filter((_, i) => i !== index)
+    }));
   }
 
   if (loading) {
@@ -546,6 +592,56 @@ export default function PostDetailPage() {
                       min="0"
                       step="0.01"
                     />
+                  </div>
+
+                  {/* Images */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Images</label>
+                    <div className="space-y-3">
+                      {formData.images.map((img, idx) => (
+                        <div key={idx} className="flex items-center gap-3 p-2 bg-slate-50 rounded-xl">
+                          <img src={img} alt={`Preview ${idx + 1}`} className="w-12 h-12 rounded-lg object-cover" />
+                          <div className="flex-1">
+                            <p className="text-sm text-slate-600">Image {idx + 1}</p>
+                          </div>
+                          <button
+                            onClick={() => handleRemoveImage(idx)}
+                            className="p-2 hover:bg-red-100 text-red-600 rounded-lg transition"
+                            title="Remove image"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <div className="border-2 border-dashed border-slate-300 rounded-xl p-4">
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          onChange={handleImageUpload}
+                          disabled={uploadingImages}
+                          className="hidden"
+                          id="image-upload"
+                        />
+                        <label
+                          htmlFor="image-upload"
+                          className="flex flex-col items-center justify-center cursor-pointer"
+                        >
+                          {uploadingImages ? (
+                            <div className="text-center">
+                              <div className="animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent mx-auto mb-2"></div>
+                              <p className="text-sm text-slate-600">Uploading...</p>
+                            </div>
+                          ) : (
+                            <>
+                              <Image className="w-8 h-8 text-slate-400 mb-2" />
+                              <p className="text-sm text-slate-600">Click to add images</p>
+                              <p className="text-xs text-slate-500">Multiple images allowed</p>
+                            </>
+                          )}
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
