@@ -1,13 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
+import { getDataClientUrl } from './dataClient'
 
-// These should be set in environment variables
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fbmvuhcrvswbttbhioux.supabase.co'
+// The anon key is only used as a placeholder client key — our /api/supabase
+// proxy swaps in the service-role key server-side. Keep it in env vars.
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZibXZ1aGNydnN3YnR0Ymhpb3V4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3ODIzMzcsImV4cCI6MjA3OTM1ODMzN30.7RYZa52neesxSUJ8vKbWD-MUGIa1hj0-za2fjxv0Cwo'
 
-// Create client only if credentials are available
-export const supabase = supabaseUrl && supabaseAnonKey
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null
+export const supabase = createClient(getDataClientUrl(), supabaseAnonKey)
 
 // Types based on the database schema
 export interface Profile {

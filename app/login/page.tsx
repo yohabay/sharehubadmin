@@ -2,11 +2,11 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
+import { createAdminAuthClient, setAdminTokenCookie } from '@/lib/adminAuth'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fbmvuhcrvswbttbhioux.supabase.co'
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZibXZ1aGNydnN3YnR0Ymhpb3V4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3ODIzMzcsImV4cCI6MjA3OTM1ODMzN30.7RYZa52neesxSUJ8vKbWD-MUGIa1hj0-za2fjxv0Cwo'
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Shares ADMIN_STORAGE_KEY with the dashboard so the session it creates here is
+// the same one the dashboard refreshes (and builds the admin_token cookie from).
+const supabase = createAdminAuthClient()
 
 export default function LoginPage() {
   const router = useRouter()
@@ -29,7 +29,9 @@ export default function LoginPage() {
       if (signInError) throw signInError
 
       if (data.user) {
-        localStorage.setItem('admin_session', JSON.stringify(data.session))
+        // Cookie is read by /api/supabase to authorize admin data access;
+        // the dashboard keeps rewriting it on every token refresh.
+        setAdminTokenCookie(data.session?.access_token)
         router.push('/')
       }
     } catch (err: any) {

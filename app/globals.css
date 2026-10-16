@@ -68,6 +68,12 @@ body {
   animation: slideIn 0.3s ease-out;
 }
 
+/* Component classes must live in @layer components. Written as plain rules
+   after `@tailwind utilities` they beat every utility on the same element
+   (later source order, equal specificity), so per-field overrides such as
+   `form-input pl-9` were silently ignored and text overlapped the field icons. */
+@layer components {
+
 /* Table styles */
 .data-table th {
   @apply bg-slate-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500;
@@ -179,4 +185,6 @@ body {
 /* Sidebar active state */
 .nav-item-active {
   @apply bg-primary-600 text-white;
+}
+
 }

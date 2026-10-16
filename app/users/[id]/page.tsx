@@ -505,7 +505,7 @@ export default function UserDetailPage() {
                                   <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                                     post.type === 'need' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
                                   }`}>
-                                    {post.type === 'need' ? 'Need' : 'Offer'}
+                                    {post.type === 'need' ? 'Buy' : 'Sell'}
                                   </span>
                                   <span className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700">
                                     {post.category}

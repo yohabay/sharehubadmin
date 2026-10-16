@@ -1,7 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import { useRouter } from 'next/navigation'
+import { getDataClientUrl } from '@/lib/dataClient'
+import { createAdminAuthClient, setAdminTokenCookie, readLegacySession, ADMIN_LEGACY_SESSION_KEY } from '@/lib/adminAuth'
+import { searchPlaces, reverseGeocode, type PlaceResult } from '@/lib/places'
+import { generateTitleSuggestions, generateDescriptionSuggestions, suggestCategory, POST_CATEGORIES, CONDITIONS, URGENCIES, STEP_TITLES, STEP_SUBTITLES, INTENT_LABELS } from '@/lib/postSuggestions'
 import Link from 'next/link'
 import { 
   LayoutDashboard, 
@@ -19,12 +23,39 @@ import {
   ChevronRight,
   Trash2,
   Check,
+  X,
   XCircle,
   Download,
   UsersRound,
   MessageCircle,
   Shield,
-  LogOut
+  LogOut,
+  Plus,
+  Package,
+  ChevronDown,
+  Tag,
+  DollarSign,
+  ArrowLeftRight,
+  ShoppingBag,
+  Type as TypeIcon,
+  AlignLeft,
+  Sparkles,
+  Bot,
+  ArrowUpRight,
+  PenLine,
+  Camera,
+  ImagePlus,
+  SlidersHorizontal,
+  LayoutGrid,
+  MapPin,
+  Map,
+  BadgeCheck,
+  Clock,
+  Lightbulb,
+  CheckCircle2,
+  Loader2,
+  Crosshair,
+  type LucideIcon
 } from 'lucide-react'
 import { 
   Chart as ChartJS, 
@@ -54,10 +85,100 @@ ChartJS.register(
   LineElement
 )
 
-// Supabase client - use environment variables
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fbmvuhcrvswbttbhioux.supabase.co'
+// Supabase client - talks to our /api/supabase proxy so the service-role key
+// is applied server-side (admin writes keep working under hardened RLS).
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZibXZ1aGNydnN3YnR0Ymhpb3V4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3ODIzMzcsImV4cCI6MjA3OTM1ODMzN30.7RYZa52neesxSUJ8vKbWD-MUGIa1hj0-za2fjxv0Cwo'
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Data client: a REST wrapper around /api/supabase only. Auth lives in
+// authClient — this one must never own a session of its own.
+const supabase = createClient(getDataClientUrl(), supabaseAnonKey, {
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+})
+
+// Session client: shares ADMIN_STORAGE_KEY with the login page so it can
+// refresh the token that the /api/supabase cookie is built from.
+const authClient = createAdminAuthClient()
+
+// Real Supabase host — used only to build public storage URLs for uploaded photos.
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fbmvuhcrvswbttbhioux.supabase.co'
+
+// Wizard pieces shared by the create-post modal (mirrors the mobile screen).
+const STEP_ICONS: LucideIcon[] = [PenLine, Camera, SlidersHorizontal, CheckCircle2]
+
+function WizardStepIcon({ step }: { step: number }) {
+  const Icon = STEP_ICONS[step] || PenLine
+  return <Icon size={22} />
+}
+
+function SuggestionBox({
+  title,
+  suggestions,
+  onSelect,
+  onDismiss,
+  previewLines,
+}: {
+  title: string
+  suggestions: string[]
+  onSelect: (value: string) => void
+  onDismiss: () => void
+  previewLines?: number
+}) {
+  return (
+    <div className="mt-2 rounded-lg border border-primary-200 bg-primary-50/60 p-3">
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-xs font-medium text-primary-600">
+          <Bot size={16} />
+          {title}
+        </span>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="text-xs text-slate-400 hover:text-slate-600"
+        >
+          Dismiss
+        </button>
+      </div>
+      <div className="mt-1.5 space-y-0.5">
+        {suggestions.map(suggestion => (
+          <button
+            key={suggestion}
+            type="button"
+            onClick={() => onSelect(suggestion)}
+            className="w-full flex items-start gap-2 text-left px-2 py-1.5 rounded-md hover:bg-white border border-transparent hover:border-primary-100 text-sm text-slate-700"
+          >
+            <span
+              className="flex-1"
+              style={
+                previewLines
+                  ? {
+                      display: '-webkit-box',
+                      WebkitLineClamp: previewLines,
+                      WebkitBoxOrient: 'vertical' as const,
+                      overflow: 'hidden',
+                    }
+                  : undefined
+              }
+            >
+              {suggestion}
+            </span>
+            <ArrowUpRight size={15} className="mt-0.5 shrink-0 text-slate-400" />
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ReviewRow({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-3 py-1.5">
+      <Icon size={18} className="mt-0.5 shrink-0 text-slate-400" />
+      <span className="w-24 shrink-0 text-xs text-slate-500">{label}</span>
+      <span className="flex-1 text-sm font-semibold text-slate-800 break-words">
+        {value || '—'}
+      </span>
+    </div>
+  )
+}
 
 // Types
 interface Profile {
@@ -186,14 +307,106 @@ export default function AdminPanel() {
   const [currentPageNum, setCurrentPageNum] = useState(1)
   const itemsPerPage = 10
 
-  // Check authentication
+  // Admin "create post" modal — mirrors the mobile app's 4-step wizard
+  const [showCreatePost, setShowCreatePost] = useState(false)
+  const [creatingPost, setCreatingPost] = useState(false)
+  const [createStep, setCreateStep] = useState(0)
+  const [newPostFiles, setNewPostFiles] = useState<File[]>([])
+  const [newPost, setNewPost] = useState({
+    user_id: '',
+    type: 'need' as 'need' | 'offer',
+    title: '',
+    description: '',
+    category: '',
+    location: '',
+    price: '',
+    condition: '',
+    urgency: '',
+    status: 'active' as 'active' | 'completed' | 'closed',
+  })
+
+  // Which user's products are expanded in the users list
+  const [expandedUser, setExpandedUser] = useState<string | null>(null)
+
+  // AI-ish title/description suggestions for the create-post form
+  const [titleSuggestions, setTitleSuggestions] = useState<string[]>([])
+  const [showTitleSuggestions, setShowTitleSuggestions] = useState(false)
+  const [descriptionSuggestions, setDescriptionSuggestions] = useState<string[]>([])
+  const [showDescriptionSuggestions, setShowDescriptionSuggestions] = useState(false)
+
+  // Location autocomplete (same Nominatim search the app's picker uses)
+  const [locationSuggestions, setLocationSuggestions] = useState<PlaceResult[]>([])
+  const [locationSearching, setLocationSearching] = useState(false)
+  const [locationLocating, setLocationLocating] = useState(false)
+
+  const photoInputRef = useRef<HTMLInputElement | null>(null)
+  const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
-    const session = localStorage.getItem('admin_session')
-    if (!session) {
-      router.push('/login')
-      return
+    return () => {
+      if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current)
     }
-    setIsAuthenticated(true)
+  }, [])
+
+  // Object URLs for photo previews — created once per set, revoked on change.
+  const photoPreviews = useMemo(
+    () => newPostFiles.map(file => ({ file, url: URL.createObjectURL(file) })),
+    [newPostFiles]
+  )
+  useEffect(() => {
+    return () => {
+      photoPreviews.forEach(preview => URL.revokeObjectURL(preview.url))
+    }
+  }, [photoPreviews])
+
+  // Check authentication, and keep the /api/supabase cookie in sync with the
+  // live session (Supabase access tokens expire after ~1 hour, the cookie is
+  // allowed 7 days — without this every call 401s once the token lapses).
+  useEffect(() => {
+    let active = true
+
+    const bootstrap = async () => {
+      const { data } = await authClient.auth.getSession()
+      if (!active) return
+
+      if (data.session) {
+        setAdminTokenCookie(data.session.access_token)
+        setIsAuthenticated(true)
+        return
+      }
+
+      // One-time migration: sessions written before the shared storage key
+      // existed live under a legacy key. Restoring one hands the refresh token
+      // to authClient so it can keep the cookie fresh from here on.
+      const legacy = readLegacySession()
+      if (legacy?.access_token && legacy?.refresh_token) {
+        const { data: restored } = await authClient.auth.setSession({
+          access_token: legacy.access_token,
+          refresh_token: legacy.refresh_token,
+        })
+        if (!active) return
+        if (restored.session) {
+          setAdminTokenCookie(restored.session.access_token)
+          setIsAuthenticated(true)
+          return
+        }
+      }
+
+      // Nothing recoverable — the stored token has expired. Back to login.
+      setAdminTokenCookie()
+      router.push('/login')
+    }
+
+    bootstrap()
+
+    const { data: listener } = authClient.auth.onAuthStateChange((_event, session) => {
+      setAdminTokenCookie(session?.access_token)
+    })
+
+    return () => {
+      active = false
+      listener.subscription.unsubscribe()
+    }
   }, [router])
 
   // Fetch data from Supabase
@@ -260,8 +473,23 @@ export default function AdminPanel() {
         setRatings(ratingsData || [])
       }
 
+      const firstError =
+        profilesError || postsError || messagesError || commentsError || ratingsError
       setDataLoaded(true)
-      showToast('Data loaded successfully from Supabase', 'success')
+      if (firstError) {
+        console.error('Data load error:', firstError)
+        // The proxy returns an already-actionable message for 401s (it says
+        // whether the cookie is missing or Supabase rejected the token), so
+        // only add hints for failures that are genuinely about configuration.
+        const hint = /credential|missing/i.test(firstError.message)
+          ? ' (check SUPABASE_SERVICE_ROLE_KEY in DealOra_admin/.env.local)'
+          : /forbidden/i.test(firstError.message)
+            ? ' (this account is not listed in ADMIN_EMAILS in .env.local)'
+            : ''
+        showToast(`Could not load data: ${firstError.message}${hint}`, 'error')
+      } else {
+        showToast('Data loaded successfully from Supabase', 'success')
+      }
     } catch (error) {
       console.error('Error fetching data:', error)
       showToast('Error loading data from Supabase', 'error')
@@ -283,10 +511,205 @@ export default function AdminPanel() {
     setTimeout(() => setToast(null), 3000)
   }
 
+  // ---- Create-post wizard helpers (mirror the mobile app) ----
+
+  // Buying/Selling toggle — stored as the DB's need/offer, labelled like the app.
+  const handleTypeChange = (type: 'need' | 'offer') => {
+    setNewPost(prev => ({ ...prev, type }))
+    const trimmed = newPost.title.trim()
+    if (trimmed.length >= 3) {
+      const suggestions = generateTitleSuggestions(trimmed, type)
+      setTitleSuggestions(suggestions)
+      setShowTitleSuggestions(suggestions.length > 0)
+    }
+  }
+
+  // Title suggestions while typing, plus the mobile's auto category pick.
+  const handleTitleChange = (value: string) => {
+    const trimmed = value.trim()
+    if (trimmed.length >= 3) {
+      const suggestions = generateTitleSuggestions(trimmed, newPost.type)
+      setTitleSuggestions(suggestions)
+      setShowTitleSuggestions(suggestions.length > 0)
+    } else {
+      setTitleSuggestions([])
+      setShowTitleSuggestions(false)
+    }
+
+    const suggested =
+      value.length >= 5 && !newPost.category ? suggestCategory(value, newPost.description) : ''
+    setNewPost(prev => ({
+      ...prev,
+      title: value,
+      category: suggested && suggested !== 'Other' ? suggested : prev.category,
+    }))
+  }
+
+  const handleSelectTitle = (suggestion: string) => {
+    setNewPost(prev => ({ ...prev, title: suggestion }))
+    setTitleSuggestions([])
+    setShowTitleSuggestions(false)
+  }
+
+  // Sparkle button in the title field, exactly like the mobile suffix icon.
+  const toggleTitleSuggestions = () => {
+    if (showTitleSuggestions) {
+      setTitleSuggestions([])
+      setShowTitleSuggestions(false)
+      return
+    }
+    if (newPost.title.trim().length >= 3) {
+      const suggestions = generateTitleSuggestions(newPost.title.trim(), newPost.type)
+      setTitleSuggestions(suggestions)
+      setShowTitleSuggestions(suggestions.length > 0)
+    } else {
+      showToast('Type at least 3 characters to get suggestions', 'error')
+    }
+  }
+
+  // Description drafts on demand (the mobile app's "Suggest" button)
+  const handleSuggestDescription = () => {
+    const drafts = generateDescriptionSuggestions({
+      title: newPost.title,
+      type: newPost.type,
+      category: newPost.category || undefined,
+      condition: newPost.condition,
+      location: newPost.location,
+      price: newPost.price,
+    })
+    if (drafts.length === 0) return
+    setDescriptionSuggestions(drafts)
+    setShowDescriptionSuggestions(true)
+  }
+
+  const handleSelectDescription = (suggestion: string) => {
+    setNewPost(prev => ({ ...prev, description: suggestion }))
+    setDescriptionSuggestions([])
+    setShowDescriptionSuggestions(false)
+  }
+
+  // Photos: up to 5, uploaded to the same `post-images` bucket the app uses.
+  const handleAddPhotos = (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return
+    // Snapshot now: the caller clears the input right after this returns, which
+    // empties the live FileList before React runs the state updater.
+    const picked = Array.from(fileList)
+    setNewPostFiles(prev => [...prev, ...picked].slice(0, 5))
+  }
+
+  const handleRemovePhoto = (index: number) => {
+    setNewPostFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
+  // Location search mirrors the app's picker: min 3 characters, 450ms debounce.
+  const handleLocationChange = (value: string) => {
+    setNewPost(prev => ({ ...prev, location: value }))
+    if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current)
+
+    if (value.trim().length < 3) {
+      setLocationSuggestions([])
+      setLocationSearching(false)
+      return
+    }
+
+    setLocationSearching(true)
+    locationDebounceRef.current = setTimeout(async () => {
+      const results = await searchPlaces(value)
+      setLocationSuggestions(results)
+      setLocationSearching(false)
+    }, 450)
+  }
+
+  const handleSelectLocation = (place: PlaceResult) => {
+    if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current)
+    setNewPost(prev => ({ ...prev, location: place.name }))
+    setLocationSuggestions([])
+    setLocationSearching(false)
+  }
+
+  const handleUseCurrentLocation = () => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      showToast('Could not get your location. Enable location access and try again.', 'error')
+      return
+    }
+
+    setLocationLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      async position => {
+        const place = await reverseGeocode(
+          position.coords.latitude,
+          position.coords.longitude
+        )
+        setLocationLocating(false)
+        if (!place) {
+          showToast('Could not get your location. Enable location access and try again.', 'error')
+          return
+        }
+        handleSelectLocation(place)
+      },
+      () => {
+        setLocationLocating(false)
+        showToast('Could not get your location. Enable location access and try again.', 'error')
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
+  }
+
+  // Per-step validation, with the mobile app's exact messages.
+  const validateCreateStep = (step: number): boolean => {
+    switch (step) {
+      case 0:
+        if (!newPost.title.trim()) {
+          showToast('Please enter a title for your post', 'error')
+          return false
+        }
+        return true
+      case 1:
+        if (newPost.type === 'offer' && newPostFiles.length === 0) {
+          showToast('Please add at least one photo for your listing', 'error')
+          return false
+        }
+        return true
+      case 2: {
+        const priceText = newPost.price.trim()
+        if (!priceText) {
+          showToast(
+            newPost.type === 'offer'
+              ? 'Please enter a price for your listing'
+              : 'Please enter your maximum budget',
+            'error'
+          )
+          return false
+        }
+        const price = parseFloat(priceText)
+        if (isNaN(price) || price <= 0) {
+          showToast('Please enter a valid price', 'error')
+          return false
+        }
+        return true
+      }
+      default:
+        return true
+    }
+  }
+
+  const isLastCreateStep = createStep === STEP_TITLES.length - 1
+  const isSelling = newPost.type === 'offer'
+
+  const handleStepNext = () => {
+    if (!validateCreateStep(createStep)) return
+    setCreateStep(prev => Math.min(prev + 1, STEP_TITLES.length - 1))
+  }
+
+  const handleStepBack = () => setCreateStep(prev => Math.max(prev - 1, 0))
+
   // Logout function
   const handleLogout = () => {
-    localStorage.removeItem('admin_session')
+    localStorage.removeItem(ADMIN_LEGACY_SESSION_KEY)
+    setAdminTokenCookie()
     router.push('/login')
+    // Revoke server-side too, otherwise the refresh token stays valid for 7 days.
+    authClient.auth.signOut().catch(() => {})
   }
 
   // Filter data based on search and filters
@@ -385,6 +808,105 @@ export default function AdminPanel() {
     }
   }
 
+  const closeCreatePost = () => {
+    setShowCreatePost(false)
+    setCreateStep(0)
+    setNewPostFiles([])
+    setTitleSuggestions([])
+    setShowTitleSuggestions(false)
+    setDescriptionSuggestions([])
+    setShowDescriptionSuggestions(false)
+    setLocationSuggestions([])
+    setLocationSearching(false)
+    if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current)
+    setNewPost({
+      user_id: '',
+      type: 'need',
+      title: '',
+      description: '',
+      category: '',
+      location: '',
+      price: '',
+      condition: '',
+      urgency: '',
+      status: 'active',
+    })
+  }
+
+  const handleCreatePost = async () => {
+    if (!newPost.user_id) {
+      showToast('Please select the user this post belongs to', 'error')
+      return
+    }
+    if (!newPost.title.trim()) {
+      showToast('Please enter a title for your post', 'error')
+      return
+    }
+
+    const priceText = newPost.price.trim()
+    if (!priceText) {
+      showToast(
+        newPost.type === 'offer'
+          ? 'Please enter a price for your listing'
+          : 'Please enter your maximum budget',
+        'error'
+      )
+      return
+    }
+    const price = parseFloat(priceText)
+    if (isNaN(price) || price <= 0) {
+      showToast('Please enter a valid price', 'error')
+      return
+    }
+
+    if (newPost.type === 'offer' && newPostFiles.length === 0) {
+      showToast('Please add at least one photo for your listing', 'error')
+      return
+    }
+
+    setCreatingPost(true)
+    try {
+      // Upload to the same `post-images` bucket the mobile app writes to.
+      const imageUrls: string[] = []
+      for (const file of newPostFiles) {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+        const path = `${Date.now()}_${safeName}`
+        const { error: uploadError } = await supabase.storage
+          .from('post-images')
+          .upload(path, file, { upsert: true })
+        if (uploadError) throw new Error(uploadError.message || 'Photo upload failed')
+        imageUrls.push(`${supabaseUrl}/storage/v1/object/public/post-images/${path}`)
+      }
+
+      const { data, error } = await supabase
+        .from('posts')
+        .insert({
+          user_id: newPost.user_id,
+          type: newPost.type,
+          title: newPost.title.trim(),
+          description: newPost.description.trim() || null,
+          category: newPost.category.trim() || null,
+          location: newPost.location.trim() || null,
+          price,
+          images: imageUrls.length > 0 ? imageUrls : null,
+          status: newPost.status,
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      if (data) setPosts([data, ...posts])
+      showToast('Post created successfully', 'success')
+      closeCreatePost()
+    } catch (error: any) {
+      console.error('Error creating post:', error)
+      showToast(error?.message || 'Error creating post', 'error')
+    } finally {
+      setCreatingPost(false)
+    }
+  }
+
   const handleDeleteMessage = async (messageId: string) => {
     try {
       const { error } = await supabase
@@ -461,7 +983,7 @@ export default function AdminPanel() {
 
   // Chart data
   const postsChartData = {
-    labels: ['Needs', 'Offers'],
+    labels: ['Buy', 'Sell'],
     datasets: [{
       data: [
         posts.filter(p => p.type === 'need').length,
@@ -681,7 +1203,7 @@ export default function AdminPanel() {
                           <td className="px-4 py-3 font-medium">{post.title}</td>
                           <td className="px-4 py-3">
                             <span className={`badge ${post.type === 'need' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
-                              {post.type}
+                              {post.type === 'need' ? 'Buy' : 'Sell'}
                             </span>
                           </td>
                           <td className="px-4 py-3">
@@ -738,6 +1260,7 @@ export default function AdminPanel() {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Location</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Rating</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Followers</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Products</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Joined</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Verified</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Actions</th>
@@ -745,8 +1268,8 @@ export default function AdminPanel() {
                   </thead>
                   <tbody>
                     {paginate(filteredProfiles).map(profile => (
+                      <Fragment key={profile.id}>
                       <tr 
-                        key={profile.id} 
                         className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition"
                         onClick={() => router.push(`/users/${profile.id}`)}
                       >
@@ -774,6 +1297,20 @@ export default function AdminPanel() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-slate-600">{profile.follower_count || 0}</td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setExpandedUser(expandedUser === profile.id ? null : profile.id)
+                            }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"
+                            title="View products"
+                          >
+                            <Package size={14} />
+                            {posts.filter(p => p.user_id === profile.id).length}
+                            <ChevronDown size={14} className={`transition-transform ${expandedUser === profile.id ? 'rotate-180' : ''}`} />
+                          </button>
+                        </td>
                         <td className="px-4 py-3 text-slate-600">{formatDate(profile.created_at)}</td>
                         <td className="px-4 py-3">
                           {profile.verified ? (
@@ -801,6 +1338,67 @@ export default function AdminPanel() {
                           </div>
                         </td>
                       </tr>
+                      {expandedUser === profile.id && (
+                        <tr className="bg-slate-50/70">
+                          <td colSpan={9} className="px-4 py-3">
+                            <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+                              <div className="px-4 py-2 border-b border-slate-100 flex items-center gap-2 text-sm font-medium text-slate-700">
+                                <Package size={16} className="text-slate-500" />
+                                {profile.display_name}&apos;s Products
+                              </div>
+                              {posts.filter(p => p.user_id === profile.id).length === 0 ? (
+                                <p className="px-4 py-3 text-sm text-slate-500">No products yet.</p>
+                              ) : (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-sm">
+                                    <thead>
+                                      <tr className="bg-slate-50">
+                                        <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase">Title</th>
+                                        <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase">Type</th>
+                                        <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase">Category</th>
+                                        <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase">Price</th>
+                                        <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase">Status</th>
+                                        <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase">Created</th>
+                                        <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase">Actions</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {posts.filter(p => p.user_id === profile.id).map(post => (
+                                        <tr
+                                          key={post.id}
+                                          className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
+                                          onClick={() => router.push(`/posts/${post.id}`)}
+                                        >
+                                          <td className="px-4 py-2 font-medium text-slate-800">{post.title}</td>
+                                          <td className="px-4 py-2">
+                                            <span className={`badge ${post.type === 'need' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>{post.type === 'need' ? 'Buy' : 'Sell'}</span>
+                                          </td>
+                                          <td className="px-4 py-2 text-slate-600">{post.category || '-'}</td>
+                                          <td className="px-4 py-2 text-slate-600">{post.price ?? 0} Birr</td>
+                                          <td className="px-4 py-2">
+                                            <span className={`badge ${post.status === 'active' ? 'bg-green-100 text-green-800' : post.status === 'completed' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>{post.status}</span>
+                                          </td>
+                                          <td className="px-4 py-2 text-slate-600">{formatDate(post.created_at)}</td>
+                                          <td className="px-4 py-2">
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); handleDeletePost(post.id) }}
+                                              className="p-1.5 rounded-lg hover:bg-red-100 text-red-600"
+                                              title="Delete"
+                                            >
+                                              <Trash2 size={14} />
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -841,8 +1439,8 @@ export default function AdminPanel() {
                   onChange={(e) => setPostTypeFilter(e.target.value)}
                 >
                   <option value="">All Types</option>
-                  <option value="need">Need</option>
-                  <option value="offer">Offer</option>
+                  <option value="need">Buy</option>
+                  <option value="offer">Sell</option>
                 </select>
                 <select 
                   className="form-select w-40"
@@ -862,10 +1460,28 @@ export default function AdminPanel() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
-              <button className="btn btn-secondary">
-                <Download size={16} />
-                Export
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setNewPost(prev => ({ ...prev, user_id: prev.user_id || profiles[0]?.id || '' }))
+                    setCreateStep(0)
+                    setNewPostFiles([])
+                    setTitleSuggestions([])
+                    setShowTitleSuggestions(false)
+                    setDescriptionSuggestions([])
+                    setShowDescriptionSuggestions(false)
+                    setShowCreatePost(true)
+                  }}
+                  className="btn btn-primary"
+                >
+                  <Plus size={16} />
+                  Create Post
+                </button>
+                <button className="btn btn-secondary">
+                  <Download size={16} />
+                  Export
+                </button>
+              </div>
             </div>
 
             <div className="card overflow-hidden">
@@ -917,7 +1533,7 @@ export default function AdminPanel() {
                         </td>
                         <td className="px-4 py-3">
                           <span className={`badge ${post.type === 'need' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
-                            {post.type}
+                            {post.type === 'need' ? 'Buy' : 'Sell'}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-slate-600">{post.category || '-'}</td>
@@ -1409,7 +2025,7 @@ export default function AdminPanel() {
                     <input 
                       type="text" 
                       className="form-input" 
-                      defaultValue={supabaseUrl}
+                      defaultValue={process.env.NEXT_PUBLIC_SUPABASE_URL || ''}
                       readOnly
                     />
                   </div>
@@ -1540,7 +2156,7 @@ export default function AdminPanel() {
             
             <div className="flex items-center gap-4">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
                   type="text"
                   placeholder="Search..."
@@ -1591,6 +2207,595 @@ export default function AdminPanel() {
           )}
         </div>
       </main>
+
+      {/* Create Post Modal — 4-step wizard matching the mobile app */}
+      {showCreatePost && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            {/* Step header */}
+            <div className="px-6 pt-6 pb-5 bg-primary-600 text-white sticky top-0 z-10">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
+                  <WizardStepIcon step={createStep} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-white/85">
+                    Step {createStep + 1} of {STEP_TITLES.length}
+                  </p>
+                  <h3 className="text-xl font-extrabold tracking-tight">
+                    {STEP_TITLES[createStep]}
+                  </h3>
+                </div>
+                <button
+                  onClick={closeCreatePost}
+                  className="p-2 -m-1 rounded-lg hover:bg-white/20 text-white shrink-0"
+                  aria-label="Close create post"
+                >
+                  <XCircle size={20} />
+                </button>
+              </div>
+              <p className="mt-1.5 text-[13px] leading-snug text-white/90">
+                {STEP_SUBTITLES[createStep]}
+              </p>
+              <div className="mt-4 flex gap-1.5">
+                {STEP_TITLES.map((_, index) => (
+                  <div
+                    key={index}
+                    className={`h-1.5 flex-1 rounded-full ${
+                      index <= createStep ? 'bg-white' : 'bg-white/30'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {createStep === 0 && (
+                <>
+                  {/* Intent */}
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 rounded-lg bg-primary-50 text-primary-600">
+                        <ArrowLeftRight size={18} />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-semibold text-slate-800">
+                          What do you want to do?
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Choose whether you are buying or selling
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">
+                      <button
+                        type="button"
+                        onClick={() => handleTypeChange('need')}
+                        className={`flex items-center justify-center gap-2 rounded-md py-2.5 text-sm font-medium transition ${
+                          newPost.type === 'need'
+                            ? 'bg-white text-primary-600 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        <ShoppingBag size={18} />
+                        Buying
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleTypeChange('offer')}
+                        className={`flex items-center justify-center gap-2 rounded-md py-2.5 text-sm font-medium transition ${
+                          newPost.type === 'offer'
+                            ? 'bg-white text-primary-600 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        <Tag size={18} />
+                        Selling
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Details */}
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 rounded-lg bg-primary-50 text-primary-600">
+                        <PenLine size={18} />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-semibold text-slate-800">Details</h4>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Describe what you are posting
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          Title <span className="text-red-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            maxLength={100}
+                            className="form-input w-full pr-11"
+                            placeholder="What do you want to buy or sell?"
+                            value={newPost.title}
+                            onChange={(e) => handleTitleChange(e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            onClick={toggleTitleSuggestions}
+                            className="absolute right-1.5 top-1/2 z-10 -translate-y-1/2 p-1.5 rounded-full hover:bg-primary-50 text-primary-600"
+                            aria-label="Get title suggestions"
+                          >
+                            <Sparkles size={18} />
+                          </button>
+                        </div>
+                        {showTitleSuggestions && titleSuggestions.length > 0 && (
+                          <SuggestionBox
+                            title="AI title suggestions"
+                            suggestions={titleSuggestions}
+                            onSelect={handleSelectTitle}
+                            onDismiss={() => {
+                              setTitleSuggestions([])
+                              setShowTitleSuggestions(false)
+                            }}
+                          />
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          Description
+                        </label>
+                        <textarea
+                          className="form-input w-full"
+                          rows={4}
+                          maxLength={500}
+                          placeholder="Add more details..."
+                          value={newPost.description}
+                          onChange={(e) => setNewPost({ ...newPost, description: e.target.value })}
+                        />
+                        <div className="mt-1 flex items-center justify-between">
+                          <span className="text-xs text-slate-500">Not sure what to write?</span>
+                          <button
+                            type="button"
+                            onClick={handleSuggestDescription}
+                            className="inline-flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700"
+                          >
+                            <Sparkles size={14} />
+                            Suggest
+                          </button>
+                        </div>
+                        {showDescriptionSuggestions && descriptionSuggestions.length > 0 && (
+                          <SuggestionBox
+                            title="AI description suggestions"
+                            suggestions={descriptionSuggestions}
+                            onSelect={handleSelectDescription}
+                            onDismiss={() => {
+                              setDescriptionSuggestions([])
+                              setShowDescriptionSuggestions(false)
+                            }}
+                            previewLines={3}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {createStep === 1 && (
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 rounded-lg bg-primary-50 text-primary-600">
+                      <Camera size={18} />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-semibold text-slate-800">Photos</h4>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {isSelling
+                          ? 'Required — add at least one photo'
+                          : 'Optional — listings with photos sell faster'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={e => {
+                      handleAddPhotos(e.target.files)
+                      e.target.value = ''
+                    }}
+                  />
+
+                  <div className="mt-3">
+                    {photoPreviews.length === 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => photoInputRef.current?.click()}
+                        className="w-full h-[148px] rounded-xl border-2 border-dashed border-primary-500/40 bg-primary-50 flex flex-col items-center justify-center gap-1.5 text-primary-600 hover:bg-primary-100 transition"
+                      >
+                        <span className="p-3 rounded-full bg-primary-100">
+                          <ImagePlus size={26} />
+                        </span>
+                        <span className="text-sm font-semibold">Add photos</span>
+                        <span className="text-xs text-slate-500">Up to 5 images</span>
+                      </button>
+                    ) : (
+                      <div className="flex gap-2 overflow-x-auto pb-1">
+                        {photoPreviews.map((preview, index) => (
+                          <div
+                            key={`${preview.file.name}-${index}`}
+                            className="relative shrink-0 w-[104px] h-[104px] rounded-lg overflow-hidden border border-slate-200"
+                          >
+                            <img
+                              src={preview.url}
+                              alt={preview.file.name}
+                              className="w-full h-full object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePhoto(index)}
+                              className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-black transition"
+                              aria-label="Remove photo"
+                            >
+                              <XCircle size={16} />
+                            </button>
+                          </div>
+                        ))}
+                        {photoPreviews.length < 5 && (
+                          <button
+                            type="button"
+                            onClick={() => photoInputRef.current?.click()}
+                            className="shrink-0 w-[104px] h-[104px] rounded-lg border-2 border-dashed border-primary-500/40 bg-primary-50 text-primary-600 flex flex-col items-center justify-center hover:bg-primary-100 transition"
+                          >
+                            <ImagePlus size={22} />
+                            <span className="text-xs mt-1">Add</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {createStep === 2 && (
+                <>
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 rounded-lg bg-primary-50 text-primary-600">
+                        <LayoutGrid size={18} />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-semibold text-slate-800">
+                          Category &amp; Location
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Help the right people find you
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          Category
+                        </label>
+                        <select
+                          className="form-select w-full"
+                          value={newPost.category}
+                          onChange={e => setNewPost({ ...newPost, category: e.target.value })}
+                        >
+                          <option value="">Select a category</option>
+                          {POST_CATEGORIES.map(category => (
+                            <option key={category} value={category}>
+                              {category}
+                            </option>
+                          ))}
+                        </select>
+                        {!newPost.category && (
+                          <p className="text-xs text-slate-400 mt-1">
+                            Picked for you automatically once your title is specific enough
+                          </p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          Location
+                        </label>
+                        <div className="relative">
+                          <MapPin className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                          <input
+                            type="text"
+                            className="form-input w-full pl-9 pr-10"
+                            placeholder="Search area, e.g. Bole, Addis Ababa"
+                            value={newPost.location}
+                            onChange={e => handleLocationChange(e.target.value)}
+                            autoComplete="off"
+                          />
+                          {locationSearching ? (
+                            <Loader2 className="pointer-events-none absolute right-3 top-1/2 z-10 -translate-y-1/2 w-4 h-4 text-primary-600 animate-spin" />
+                          ) : newPost.location ? (
+                            <button
+                              type="button"
+                              onClick={() => handleLocationChange('')}
+                              className="absolute right-2.5 top-1/2 z-10 -translate-y-1/2 rounded p-0.5 text-slate-500 hover:text-slate-700"
+                              aria-label="Clear location"
+                            >
+                              <X size={16} />
+                            </button>
+                          ) : (
+                            <Map
+                              className="pointer-events-none absolute right-3 top-1/2 z-10 -translate-y-1/2 w-4 h-4 text-slate-500"
+                              aria-hidden
+                            />
+                          )}
+
+                          {locationSuggestions.length > 0 && (
+                            <div className="absolute z-20 left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+                              {locationSuggestions.map((place, index) => (
+                                <button
+                                  key={`${place.name}-${index}`}
+                                  type="button"
+                                  onClick={() => handleSelectLocation(place)}
+                                  className="w-full flex items-start gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100 last:border-0"
+                                >
+                                  <MapPin size={16} className="mt-0.5 shrink-0 text-primary-600" />
+                                  <span className="line-clamp-2">{place.name}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                          <button
+                            type="button"
+                            onClick={handleUseCurrentLocation}
+                            disabled={locationLocating}
+                            className="inline-flex items-center gap-1.5 text-xs font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50"
+                          >
+                            {locationLocating ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <Crosshair size={14} />
+                            )}
+                            {locationLocating ? 'Getting your location…' : 'Use my current location'}
+                          </button>
+                          <span className="text-xs text-slate-400">
+                            Type 3+ letters and pick a suggestion
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 rounded-lg bg-primary-50 text-primary-600">
+                        <DollarSign size={18} />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-semibold text-slate-800">
+                          {isSelling ? 'Price & Condition' : 'Budget & Urgency'}
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {isSelling ? 'Set your asking price' : 'Tell sellers your budget'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          {isSelling ? 'Price (Required)' : 'Max Budget (Required)'}
+                        </label>
+                        <div className="relative">
+                          <Tag className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            className="form-input w-full pl-9"
+                            placeholder={isSelling ? 'e.g. 500 Birr' : 'e.g. 1000 Birr'}
+                            value={newPost.price}
+                            onChange={e => setNewPost({ ...newPost, price: e.target.value })}
+                          />
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {isSelling
+                            ? 'What is your asking price in Birr?'
+                            : 'What is your maximum budget in Birr?'}
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          {isSelling ? 'Condition (Optional)' : 'Urgency (Optional)'}
+                        </label>
+                        <div className="relative">
+                          <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-slate-500">
+                            {isSelling ? <BadgeCheck size={16} /> : <Clock size={16} />}
+                          </span>
+                          {isSelling ? (
+                            <select
+                              className="form-select w-full pl-9"
+                              value={newPost.condition}
+                              onChange={e => setNewPost({ ...newPost, condition: e.target.value })}
+                            >
+                              <option value="">Select condition</option>
+                              {CONDITIONS.map(condition => (
+                                <option key={condition} value={condition}>
+                                  {condition}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <select
+                              className="form-select w-full pl-9"
+                              value={newPost.urgency}
+                              onChange={e => setNewPost({ ...newPost, urgency: e.target.value })}
+                            >
+                              <option value="">How soon do you need this?</option>
+                              {URGENCIES.map(urgency => (
+                                <option key={urgency} value={urgency}>
+                                  {urgency}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {createStep === 3 && (
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    {photoPreviews.length > 0 && (
+                      <div className="pb-3 mb-3 border-b border-slate-100">
+                        <p className="text-xs font-medium text-slate-500 mb-2">Photos</p>
+                        <div className="flex gap-2 overflow-x-auto">
+                          {photoPreviews.map((preview, index) => (
+                            <div
+                              key={`${preview.file.name}-${index}`}
+                              className="shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-slate-200"
+                            >
+                              <img
+                                src={preview.url}
+                                alt={preview.file.name}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <ReviewRow icon={ArrowLeftRight} label="Type" value={INTENT_LABELS[newPost.type]} />
+                    <ReviewRow icon={TypeIcon} label="Title" value={newPost.title.trim()} />
+                    {newPost.description.trim() && (
+                      <ReviewRow icon={AlignLeft} label="Description" value={newPost.description.trim()} />
+                    )}
+                    {newPost.category && (
+                      <ReviewRow icon={LayoutGrid} label="Category" value={newPost.category} />
+                    )}
+                    {newPost.location.trim() && (
+                      <ReviewRow icon={MapPin} label="Location" value={newPost.location.trim()} />
+                    )}
+                    <ReviewRow
+                      icon={DollarSign}
+                      label={isSelling ? 'Price' : 'Max budget'}
+                      value={newPost.price ? `${newPost.price} Birr` : ''}
+                    />
+                    {isSelling && newPost.condition && (
+                      <ReviewRow icon={BadgeCheck} label="Condition" value={newPost.condition} />
+                    )}
+                    {!isSelling && newPost.urgency && (
+                      <ReviewRow icon={Clock} label="Urgency" value={newPost.urgency} />
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-primary-200 bg-primary-50 p-4 flex items-start gap-3">
+                    <Lightbulb size={20} className="mt-0.5 shrink-0 text-primary-600" />
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Looks good! Tap Publish Post to make it live.
+                    </p>
+                  </div>
+
+                  {/* Admin-only controls (the app has no equivalent) */}
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 rounded-lg bg-slate-100 text-slate-500">
+                        <Shield size={18} />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-semibold text-slate-800">Admin</h4>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Choose who owns this post and its status
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          Post Owner
+                        </label>
+                        <select
+                          className="form-select w-full"
+                          value={newPost.user_id}
+                          onChange={e => setNewPost({ ...newPost, user_id: e.target.value })}
+                        >
+                          <option value="">Select a user...</option>
+                          {profiles.map(profile => (
+                            <option key={profile.id} value={profile.id}>
+                              {profile.display_name} ({profile.user_type})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          Status
+                        </label>
+                        <select
+                          className="form-select w-full"
+                          value={newPost.status}
+                          onChange={e =>
+                            setNewPost({
+                              ...newPost,
+                              status: e.target.value as 'active' | 'completed' | 'closed',
+                            })
+                          }
+                        >
+                          <option value="active">Active</option>
+                          <option value="completed">Completed</option>
+                          <option value="closed">Closed</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50 sticky bottom-0">
+              {createStep > 0 && (
+                <button
+                  type="button"
+                  onClick={handleStepBack}
+                  className="btn btn-secondary px-4"
+                  disabled={creatingPost}
+                  aria-label="Back"
+                >
+                  <ChevronLeft size={20} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={isLastCreateStep ? handleCreatePost : handleStepNext}
+                className="btn btn-primary flex-1"
+                disabled={creatingPost}
+              >
+                {creatingPost
+                  ? 'Creating...'
+                  : isLastCreateStep
+                    ? 'Publish Post'
+                    : 'Continue'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast Notification */}
       {toast && (

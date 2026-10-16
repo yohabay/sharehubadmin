@@ -1,13 +1,25 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
-import { 
-  ArrowLeft, Heart, MessageSquare, Share2, MapPin, 
-  Calendar, Edit, Trash2, CheckCircle, XCircle, Eye,
-  FileText, Save, X, Image, DollarSign, Tag
-} from 'lucide-react';
+import { supabase } from "@/lib/supabase";
+import {
+  ArrowLeft,
+  Calendar,
+  CheckCircle,
+  DollarSign,
+  Edit,
+  Eye,
+  FileText,
+  Heart,
+  Image,
+  MapPin,
+  MessageSquare,
+  Save,
+  Share2,
+  Trash2,
+  X,
+} from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 interface PostDetail {
   id: string;
@@ -47,32 +59,32 @@ export default function PostDetailPage() {
   const params = useParams();
   const router = useRouter();
   const postId = params.id as string;
-  
+
   const [post, setPost] = useState<PostDetail | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'details' | 'comments'>('details');
+  const [activeTab, setActiveTab] = useState<"details" | "comments">("details");
   const [editing, setEditing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [commentToDelete, setCommentToDelete] = useState<string | null>(null);
   const categories = [
-    'Phones',
-    'Laptops',
-    'Headphones & Speakers',
-    'Power Banks & USB Drives',
-    'Other Electronics',
-    'Electronics',
+    "Phones",
+    "Laptops",
+    "Headphones & Speakers",
+    "Power Banks & USB Drives",
+    "Other Electronics",
+    "Electronics",
   ];
 
   const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    category: '',
-    location: '',
+    title: "",
+    description: "",
+    category: "",
+    location: "",
     price: 0,
-    status: 'active',
+    status: "active",
     images: [] as string[],
   });
   const [uploadingImages, setUploadingImages] = useState(false);
@@ -88,28 +100,28 @@ export default function PostDetailPage() {
 
   async function fetchPost() {
     setLoading(true);
-    
+
     const { data: postData } = await supabaseClient
-      .from('posts')
-      .select('*')
-      .eq('id', postId)
+      .from("posts")
+      .select("*")
+      .eq("id", postId)
       .single();
 
     if (postData) {
       const { data: userData } = await supabaseClient
-        .from('profiles')
-        .select('display_name, avatar_url, verified, rating')
-        .eq('id', postData.user_id)
+        .from("profiles")
+        .select("display_name, avatar_url, verified, rating")
+        .eq("id", postData.user_id)
         .single();
 
       setPost({ ...postData, user: userData });
       setFormData({
-        title: postData.title || '',
-        description: postData.description || '',
-        category: postData.category || '',
-        location: postData.location || '',
+        title: postData.title || "",
+        description: postData.description || "",
+        category: postData.category || "",
+        location: postData.location || "",
         price: postData.price || 0,
-        status: postData.status || 'active',
+        status: postData.status || "active",
         images: postData.images || [],
       });
     }
@@ -118,21 +130,21 @@ export default function PostDetailPage() {
 
   async function fetchComments() {
     const { data } = await supabaseClient
-      .from('comments')
-      .select('*')
-      .eq('post_id', postId)
-      .order('created_at', { ascending: false });
+      .from("comments")
+      .select("*")
+      .eq("post_id", postId)
+      .order("created_at", { ascending: false });
 
     if (data) {
       const commentsWithUsers = await Promise.all(
         data.map(async (comment) => {
           const { data: userData } = await supabaseClient
-            .from('profiles')
-            .select('display_name, avatar_url')
-            .eq('id', comment.user_id)
+            .from("profiles")
+            .select("display_name, avatar_url")
+            .eq("id", comment.user_id)
             .single();
           return { ...comment, user: userData };
-        })
+        }),
       );
       setComments(commentsWithUsers);
     }
@@ -141,7 +153,7 @@ export default function PostDetailPage() {
   async function handleSave() {
     setSaving(true);
     const { error } = await supabaseClient
-      .from('posts')
+      .from("posts")
       .update({
         title: formData.title,
         description: formData.description,
@@ -151,7 +163,7 @@ export default function PostDetailPage() {
         status: formData.status,
         images: formData.images,
       })
-      .eq('id', postId);
+      .eq("id", postId);
 
     if (!error) {
       setEditing(false);
@@ -163,21 +175,21 @@ export default function PostDetailPage() {
   async function handleStatusChange(newStatus: string) {
     setFormData({ ...formData, status: newStatus });
     await supabaseClient
-      .from('posts')
+      .from("posts")
       .update({ status: newStatus })
-      .eq('id', postId);
+      .eq("id", postId);
     fetchPost();
   }
 
   async function handleDelete() {
     setSaving(true);
     const { error } = await supabaseClient
-      .from('posts')
+      .from("posts")
       .delete()
-      .eq('id', postId);
+      .eq("id", postId);
 
     if (!error) {
-      router.push('/?tab=posts');
+      router.push("/?tab=posts");
     }
     setSaving(false);
   }
@@ -185,9 +197,9 @@ export default function PostDetailPage() {
   async function handleDeleteComment(commentId: string) {
     setSaving(true);
     const { error } = await supabaseClient
-      .from('comments')
+      .from("comments")
       .delete()
-      .eq('id', commentId);
+      .eq("id", commentId);
 
     if (!error) {
       fetchComments();
@@ -204,21 +216,21 @@ export default function PostDetailPage() {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const fileExt = file.name.split('.').pop();
+      const fileExt = file.name.split(".").pop();
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `posts/${fileName}`;
 
       const { data, error } = await supabaseClient.storage
-        .from('images')
+        .from("images")
         .upload(filePath, file);
 
       if (error) {
-        console.error('Error uploading image:', error);
+        console.error("Error uploading image:", error);
         continue;
       }
 
       const { data: urlData } = supabaseClient.storage
-        .from('images')
+        .from("images")
         .getPublicUrl(filePath);
 
       if (urlData.publicUrl) {
@@ -226,14 +238,17 @@ export default function PostDetailPage() {
       }
     }
 
-    setFormData(prev => ({ ...prev, images: [...prev.images, ...newImages] }));
+    setFormData((prev) => ({
+      ...prev,
+      images: [...prev.images, ...newImages],
+    }));
     setUploadingImages(false);
   }
 
   function handleRemoveImage(index: number) {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      images: prev.images.filter((_, i) => i !== index)
+      images: prev.images.filter((_, i) => i !== index),
     }));
   }
 
@@ -256,7 +271,7 @@ export default function PostDetailPage() {
             <FileText className="w-12 h-12 text-slate-400" />
           </div>
           <h2 className="text-2xl font-bold text-slate-900">Post not found</h2>
-          <button 
+          <button
             onClick={() => router.back()}
             className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
@@ -274,14 +289,16 @@ export default function PostDetailPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-4">
-              <button 
+              <button
                 onClick={() => router.back()}
                 className="p-2 hover:bg-slate-100 rounded-xl transition"
               >
                 <ArrowLeft className="w-5 h-5 text-slate-600" />
               </button>
               <div>
-                <h1 className="text-xl font-bold text-slate-900">Post Management</h1>
+                <h1 className="text-xl font-bold text-slate-900">
+                  Post Management
+                </h1>
                 <p className="text-sm text-slate-500">View and manage post</p>
               </div>
             </div>
@@ -301,7 +318,7 @@ export default function PostDetailPage() {
                     className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition disabled:opacity-50"
                   >
                     <Save className="w-4 h-4" />
-                    {saving ? 'Saving...' : 'Save'}
+                    {saving ? "Saving..." : "Save"}
                   </button>
                 </>
               ) : (
@@ -334,13 +351,13 @@ export default function PostDetailPage() {
                 <div className="p-4">
                   <div className="flex gap-3 overflow-x-auto pb-2">
                     {post.images.map((img, idx) => (
-                      <div 
+                      <div
                         key={idx}
                         className="flex-shrink-0 w-40 h-40 rounded-xl overflow-hidden cursor-pointer hover:opacity-90 transition"
                         onClick={() => setSelectedImage(img)}
                       >
-                        <img 
-                          src={img} 
+                        <img
+                          src={img}
                           alt={`Post image ${idx + 1}`}
                           className="w-full h-full object-cover"
                         />
@@ -356,25 +373,32 @@ export default function PostDetailPage() {
               <div className="p-6">
                 {/* Type & Category */}
                 <div className="flex items-center gap-2 mb-4">
-                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                    post.type === 'need' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
-                  }`}>
-                    {post.type === 'need' ? 'Need Help' : 'Offering Help'}
+                  <span
+                    className={`px-3 py-1 rounded-full text-sm font-medium ${
+                      post.type === "need"
+                        ? "bg-blue-100 text-blue-700"
+                        : "bg-green-100 text-green-700"
+                    }`}
+                  >
+                    {post.type === "need" ? "BUYING" : "SELLING"}
                   </span>
                   <span className="px-3 py-1 rounded-full text-sm bg-slate-100 text-slate-700">
                     {post.category}
                   </span>
-                  
+
                   {/* Status Dropdown */}
                   <div className="relative ml-auto">
                     <select
                       value={formData.status}
                       onChange={(e) => handleStatusChange(e.target.value)}
                       className={`px-3 py-1 rounded-full text-sm font-medium border-0 cursor-pointer ${
-                        post.status === 'active' ? 'bg-green-100 text-green-700' :
-                        post.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                        post.status === 'completed' ? 'bg-blue-100 text-blue-700' :
-                        'bg-slate-100 text-slate-700'
+                        post.status === "active"
+                          ? "bg-green-100 text-green-700"
+                          : post.status === "pending"
+                            ? "bg-yellow-100 text-yellow-700"
+                            : post.status === "completed"
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-slate-100 text-slate-700"
                       }`}
                     >
                       <option value="active">Active</option>
@@ -390,11 +414,15 @@ export default function PostDetailPage() {
                   <input
                     type="text"
                     value={formData.title}
-                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, title: e.target.value })
+                    }
                     className="w-full text-2xl font-bold border border-slate-300 rounded-xl px-4 py-3 mb-4 focus:ring-2 focus:ring-blue-500"
                   />
                 ) : (
-                  <h2 className="text-2xl font-bold text-slate-900 mb-4">{post.title}</h2>
+                  <h2 className="text-2xl font-bold text-slate-900 mb-4">
+                    {post.title}
+                  </h2>
                 )}
 
                 {/* Price */}
@@ -411,11 +439,18 @@ export default function PostDetailPage() {
 
                 {/* Description */}
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Description</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Description
+                  </label>
                   {editing ? (
                     <textarea
                       value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          description: e.target.value,
+                        })
+                      }
                       rows={8}
                       className="w-full border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500"
                     />
@@ -433,12 +468,16 @@ export default function PostDetailPage() {
                     <input
                       type="text"
                       value={formData.location}
-                      onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, location: e.target.value })
+                      }
                       className="flex-1 border border-slate-300 rounded-lg px-3 py-1"
                       placeholder="Location"
                     />
                   ) : (
-                    <span className="text-slate-700">{post.location || 'No location specified'}</span>
+                    <span className="text-slate-700">
+                      {post.location || "No location specified"}
+                    </span>
                   )}
                 </div>
 
@@ -446,15 +485,21 @@ export default function PostDetailPage() {
                 <div className="flex items-center gap-6 py-4 border-t">
                   <div className="flex items-center gap-2">
                     <Heart className="w-5 h-5 text-red-500" />
-                    <span className="font-medium">{post.likes_count || 0} likes</span>
+                    <span className="font-medium">
+                      {post.likes_count || 0} likes
+                    </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <MessageSquare className="w-5 h-5 text-blue-500" />
-                    <span className="font-medium">{post.comments_count || 0} comments</span>
+                    <span className="font-medium">
+                      {post.comments_count || 0} comments
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 text-slate-500 ml-auto">
                     <Calendar className="w-5 h-5" />
-                    <span>{new Date(post.created_at).toLocaleDateString()}</span>
+                    <span>
+                      {new Date(post.created_at).toLocaleDateString()}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -477,18 +522,26 @@ export default function PostDetailPage() {
                         onClick={() => router.push(`/comments/${comment.id}`)}
                       >
                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-medium flex-shrink-0">
-                          {comment.user?.display_name?.charAt(0).toUpperCase() || 'U'}
+                          {comment.user?.display_name
+                            ?.charAt(0)
+                            .toUpperCase() || "U"}
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center justify-between">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
-                                <span className="font-medium">{comment.user?.display_name || 'Unknown'}</span>
+                                <span className="font-medium">
+                                  {comment.user?.display_name || "Unknown"}
+                                </span>
                                 <span className="text-slate-500 text-sm">
-                                  {new Date(comment.created_at).toLocaleDateString()}
+                                  {new Date(
+                                    comment.created_at,
+                                  ).toLocaleDateString()}
                                 </span>
                               </div>
-                              <p className="text-slate-700">{comment.content}</p>
+                              <p className="text-slate-700">
+                                {comment.content}
+                              </p>
                             </div>
                             <button
                               onClick={(e) => {
@@ -522,17 +575,19 @@ export default function PostDetailPage() {
               <h3 className="font-semibold text-slate-900 mb-4">Posted by</h3>
               <div className="flex items-center gap-4">
                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xl font-bold">
-                  {post.user?.display_name?.charAt(0).toUpperCase() || 'U'}
+                  {post.user?.display_name?.charAt(0).toUpperCase() || "U"}
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold">{post.user?.display_name || 'Unknown'}</span>
+                    <span className="font-semibold">
+                      {post.user?.display_name || "Unknown"}
+                    </span>
                     {post.user?.verified && (
                       <CheckCircle className="w-4 h-4 text-green-500" />
                     )}
                   </div>
                   <div className="flex items-center gap-1 text-sm text-slate-500">
-                    <span>★ {post.user?.rating?.toFixed(1) || '0.0'}</span>
+                    <span>★ {post.user?.rating?.toFixed(1) || "0.0"}</span>
                   </div>
                 </div>
               </div>
@@ -546,7 +601,9 @@ export default function PostDetailPage() {
 
             {/* Quick Actions */}
             <div className="bg-white rounded-2xl shadow-sm p-6">
-              <h3 className="font-semibold text-slate-900 mb-3">Quick Actions</h3>
+              <h3 className="font-semibold text-slate-900 mb-3">
+                Quick Actions
+              </h3>
               <div className="space-y-2">
                 <button className="w-full flex items-center gap-3 p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition text-left">
                   <Eye className="w-5 h-5 text-blue-600" />
@@ -566,28 +623,43 @@ export default function PostDetailPage() {
             {/* Edit Form in Sidebar */}
             {editing && (
               <div className="bg-white rounded-2xl shadow-sm p-6">
-                <h3 className="font-semibold text-slate-900 mb-4">Edit Details</h3>
+                <h3 className="font-semibold text-slate-900 mb-4">
+                  Edit Details
+                </h3>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Category</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Category
+                    </label>
                     <select
                       value={formData.category}
-                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, category: e.target.value })
+                      }
                       className="w-full border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">Select category</option>
                       {categories.map((cat) => (
-                        <option key={cat} value={cat}>{cat}</option>
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
                       ))}
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Price (Birr)</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Price (Birr)
+                    </label>
                     <input
                       type="number"
                       value={formData.price}
-                      onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          price: parseFloat(e.target.value) || 0,
+                        })
+                      }
                       className="w-full border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500"
                       min="0"
                       step="0.01"
@@ -596,13 +668,24 @@ export default function PostDetailPage() {
 
                   {/* Images */}
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Images</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Images
+                    </label>
                     <div className="space-y-3">
                       {formData.images.map((img, idx) => (
-                        <div key={idx} className="flex items-center gap-3 p-2 bg-slate-50 rounded-xl">
-                          <img src={img} alt={`Preview ${idx + 1}`} className="w-12 h-12 rounded-lg object-cover" />
+                        <div
+                          key={idx}
+                          className="flex items-center gap-3 p-2 bg-slate-50 rounded-xl"
+                        >
+                          <img
+                            src={img}
+                            alt={`Preview ${idx + 1}`}
+                            className="w-12 h-12 rounded-lg object-cover"
+                          />
                           <div className="flex-1">
-                            <p className="text-sm text-slate-600">Image {idx + 1}</p>
+                            <p className="text-sm text-slate-600">
+                              Image {idx + 1}
+                            </p>
                           </div>
                           <button
                             onClick={() => handleRemoveImage(idx)}
@@ -630,13 +713,19 @@ export default function PostDetailPage() {
                           {uploadingImages ? (
                             <div className="text-center">
                               <div className="animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent mx-auto mb-2"></div>
-                              <p className="text-sm text-slate-600">Uploading...</p>
+                              <p className="text-sm text-slate-600">
+                                Uploading...
+                              </p>
                             </div>
                           ) : (
                             <>
                               <Image className="w-8 h-8 text-slate-400 mb-2" />
-                              <p className="text-sm text-slate-600">Click to add images</p>
-                              <p className="text-xs text-slate-500">Multiple images allowed</p>
+                              <p className="text-sm text-slate-600">
+                                Click to add images
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                Multiple images allowed
+                              </p>
                             </>
                           )}
                         </label>
@@ -649,15 +738,21 @@ export default function PostDetailPage() {
 
             {/* Post ID */}
             <div className="bg-white rounded-2xl shadow-sm p-6">
-              <h3 className="font-semibold text-slate-900 mb-3">Post Information</h3>
+              <h3 className="font-semibold text-slate-900 mb-3">
+                Post Information
+              </h3>
               <div className="space-y-3 text-sm">
                 <div>
                   <label className="text-slate-500">Post ID</label>
-                  <p className="font-mono text-xs bg-slate-50 p-2 rounded break-all">{post.id}</p>
+                  <p className="font-mono text-xs bg-slate-50 p-2 rounded break-all">
+                    {post.id}
+                  </p>
                 </div>
                 <div>
                   <label className="text-slate-500">User ID</label>
-                  <p className="font-mono text-xs bg-slate-50 p-2 rounded break-all">{post.user_id}</p>
+                  <p className="font-mono text-xs bg-slate-50 p-2 rounded break-all">
+                    {post.user_id}
+                  </p>
                 </div>
                 <div>
                   <label className="text-slate-500">Created</label>
@@ -684,14 +779,14 @@ export default function PostDetailPage() {
 
       {/* Image Modal */}
       {selectedImage && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
           onClick={() => setSelectedImage(null)}
         >
           <div className="max-w-4xl w-full">
-            <img 
-              src={selectedImage} 
-              alt="Full size" 
+            <img
+              src={selectedImage}
+              alt="Full size"
               className="w-full h-auto rounded-xl"
             />
           </div>
@@ -706,9 +801,12 @@ export default function PostDetailPage() {
               <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
                 <Trash2 className="w-8 h-8 text-red-600" />
               </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-2">Delete Post?</h3>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">
+                Delete Post?
+              </h3>
               <p className="text-slate-600 mb-6">
-                This will permanently delete this post and all comments. This action cannot be undone.
+                This will permanently delete this post and all comments. This
+                action cannot be undone.
               </p>
               <div className="flex gap-3">
                 <button
@@ -722,7 +820,7 @@ export default function PostDetailPage() {
                   disabled={saving}
                   className="flex-1 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 disabled:opacity-50"
                 >
-                  {saving ? 'Deleting...' : 'Delete'}
+                  {saving ? "Deleting..." : "Delete"}
                 </button>
               </div>
             </div>
@@ -738,9 +836,12 @@ export default function PostDetailPage() {
               <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
                 <Trash2 className="w-8 h-8 text-red-600" />
               </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-2">Delete Comment?</h3>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">
+                Delete Comment?
+              </h3>
               <p className="text-slate-600 mb-6">
-                This will permanently delete this comment. This action cannot be undone.
+                This will permanently delete this comment. This action cannot be
+                undone.
               </p>
               <div className="flex gap-3">
                 <button
@@ -759,7 +860,7 @@ export default function PostDetailPage() {
                   disabled={saving}
                   className="flex-1 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 disabled:opacity-50"
                 >
-                  {saving ? 'Deleting...' : 'Delete'}
+                  {saving ? "Deleting..." : "Delete"}
                 </button>
               </div>
             </div>
