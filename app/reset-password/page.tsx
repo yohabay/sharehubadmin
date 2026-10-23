@@ -14,14 +14,38 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    // Check if we have a session from the recovery link
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const handleAuth = async () => {
+      // Handle hash fragment from Supabase auth redirect
+      if (typeof window !== 'undefined' && window.location.hash) {
+        const hashParams = new URLSearchParams(window.location.hash.substring(1))
+        const accessToken = hashParams.get('access_token')
+        const refreshToken = hashParams.get('refresh_token')
+        const type = hashParams.get('type')
+        
+        if (accessToken && refreshToken && type === 'recovery') {
+          const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          })
+          if (error) {
+            setError('Invalid or expired reset link. Please request a new one.')
+            return
+          }
+        }
+      }
+      
+      const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
         setError('Invalid or expired reset link. Please request a new one.')
+      } else {
+        setReady(true)
       }
-    })
+    }
+    
+    handleAuth()
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -76,7 +100,7 @@ export default function ResetPasswordPage() {
                 Password updated successfully! Redirecting to login...
               </div>
             </div>
-          ) : (
+          ) : ready ? (
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">New Password</label>
@@ -111,6 +135,14 @@ export default function ResetPasswordPage() {
                 <Link href="/login" className="text-sm text-blue-600 hover:text-blue-500 transition-colors">Back to Login</Link>
               </div>
             </form>
+          ) : !error ? (
+            <div className="text-center py-4">
+              <div className="w-6 h-6 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin mx-auto"></div>
+            </div>
+          ) : (
+            <div className="text-center">
+              <Link href="/forgot-password" className="text-sm text-blue-600 hover:text-blue-500 transition-colors">Request new reset link</Link>
+            </div>
           )}
         </div>
       </div>
