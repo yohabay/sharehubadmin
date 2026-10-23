@@ -34,6 +34,7 @@ import {
   Package,
   ChevronDown,
   Tag,
+  Smartphone,
   DollarSign,
   ArrowLeftRight,
   ShoppingBag,
@@ -204,6 +205,7 @@ interface Post {
   title: string
   description: string | null
   category: string | null
+  model: string | null
   location: string | null
   price: number | null
   images: string[] | null
@@ -239,11 +241,32 @@ interface UserRating {
   created_at: string
 }
 
+interface Category {
+  id: string
+  name: string
+  slug: string
+  icon: string | null
+  sort_order: number
+  enabled: boolean
+  created_at: string
+}
+
+interface PhoneModel {
+  id: string
+  brand: string
+  name: string
+  sort_order: number
+  enabled: boolean
+  created_at: string
+}
+
 // Navigation items
 const navItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'users', label: 'Users', icon: Users },
   { id: 'posts', label: 'Posts', icon: FileText },
+  { id: 'categories', label: 'Categories', icon: Tag },
+  { id: 'models', label: 'Models', icon: Smartphone },
   { id: 'messages', label: 'Messages', icon: MessageSquare },
   { id: 'comments', label: 'Comments', icon: MessageCircle },
   { id: 'ratings', label: 'Ratings', icon: Star },
@@ -295,6 +318,17 @@ export default function AdminPanel() {
   const [messages, setMessages] = useState<Message[]>([])
   const [comments, setComments] = useState<Comment[]>([])
   const [ratings, setRatings] = useState<UserRating[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+  // Category editor form state
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [newCategoryIcon, setNewCategoryIcon] = useState('')
+  const [savingCategory, setSavingCategory] = useState(false)
+  // Phone model editor
+  const [phoneModels, setPhoneModels] = useState<PhoneModel[]>([])
+  const [modelBrandFilter, setModelBrandFilter] = useState('')
+  const [newModelBrand, setNewModelBrand] = useState('')
+  const [newModelName, setNewModelName] = useState('')
+  const [savingModel, setSavingModel] = useState(false)
   
   // Filters
   const [searchTerm, setSearchTerm] = useState('')
@@ -318,6 +352,7 @@ export default function AdminPanel() {
     title: '',
     description: '',
     category: '',
+    model: '',
     location: '',
     price: '',
     condition: '',
@@ -473,8 +508,40 @@ export default function AdminPanel() {
         setRatings(ratingsData || [])
       }
 
+      // Fetch categories (managed section). Disabled categories sort last.
+      const { data: categoriesData, error: categoriesError } = await supabase
+        .from('categories')
+        .select('*')
+        .order('enabled', { ascending: false })
+        .order('sort_order', { ascending: true })
+
+      if (categoriesError) {
+        console.error('Error fetching categories:', categoriesError)
+      } else {
+        setCategories(categoriesData || [])
+      }
+
+      // Fetch phone models (managed section), grouped by brand.
+      const { data: modelsData, error: modelsError } = await supabase
+        .from('phone_models')
+        .select('*')
+        .order('brand', { ascending: true })
+        .order('sort_order', { ascending: true })
+
+      if (modelsError) {
+        console.error('Error fetching phone models:', modelsError)
+      } else {
+        setPhoneModels(modelsData || [])
+      }
+
       const firstError =
-        profilesError || postsError || messagesError || commentsError || ratingsError
+        profilesError ||
+        postsError ||
+        messagesError ||
+        commentsError ||
+        ratingsError ||
+        categoriesError ||
+        modelsError
       setDataLoaded(true)
       if (firstError) {
         console.error('Data load error:', firstError)
@@ -772,6 +839,299 @@ export default function AdminPanel() {
     }
   }
 
+  // ---- Category management ----------------------------------------------
+  const slugify = (value: string) =>
+    value
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+
+  const handleToggleCategory = async (category: Category) => {
+    try {
+      const { error } = await supabase
+        .from('categories')
+        .update({ enabled: !category.enabled })
+        .eq('id', category.id)
+
+      if (error) throw error
+
+      setCategories(prev =>
+        prev
+          .map(c => (c.id === category.id ? { ...c, enabled: !c.enabled } : c))
+          .sort((a, b) =>
+            a.enabled === b.enabled ? a.sort_order - b.sort_order : a.enabled ? -1 : 1
+          )
+      )
+      showToast(
+        `${category.name} ${category.enabled ? 'disabled' : 'enabled'}`,
+        'success'
+      )
+    } catch (error) {
+      console.error('Error updating category:', error)
+      showToast('Error updating category', 'error')
+    }
+  }
+
+  const handleAddCategory = async () => {
+    const name = newCategoryName.trim()
+    if (!name) {
+      showToast('Enter a category name', 'error')
+      return
+    }
+    setSavingCategory(true)
+    try {
+      const maxSort = categories.reduce((m, c) => Math.max(m, c.sort_order), 0)
+      const { data, error } = await supabase
+        .from('categories')
+        .insert({
+          name,
+          slug: slugify(name),
+          icon: newCategoryIcon.trim() || null,
+          sort_order: maxSort + 1,
+          enabled: true,
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setCategories(prev => [...prev, data])
+      setNewCategoryName('')
+      setNewCategoryIcon('')
+      showToast(`${name} added`, 'success')
+    } catch (error: any) {
+      console.error('Error adding category:', error)
+      showToast(
+        error?.message?.includes('duplicate')
+          ? 'A category with that name already exists'
+          : 'Error adding category',
+        'error'
+      )
+    } finally {
+      setSavingCategory(false)
+    }
+  }
+
+  const handleRenameCategory = async (category: Category, name: string) => {
+    const trimmed = name.trim()
+    if (!trimmed || trimmed === category.name) return
+    try {
+      const { error } = await supabase
+        .from('categories')
+        .update({ name: trimmed })
+        .eq('id', category.id)
+
+      if (error) throw error
+
+      // Keep the model catalog attached to the renamed brand.
+      const { error: modelError } = await supabase
+        .from('phone_models')
+        .update({ brand: trimmed })
+        .eq('brand', category.name)
+      if (modelError) {
+        console.error('Error renaming brand on models:', modelError)
+      }
+
+      setCategories(prev =>
+        prev.map(c => (c.id === category.id ? { ...c, name: trimmed } : c))
+      )
+      setPhoneModels(prev =>
+        prev.map(m => (m.brand === category.name ? { ...m, brand: trimmed } : m))
+      )
+      setNewModelBrand(prev => (prev === category.name ? trimmed : prev))
+      showToast('Category renamed', 'success')
+    } catch (error) {
+      console.error('Error renaming category:', error)
+      showToast('Error renaming category', 'error')
+    }
+  }
+
+  const handleReorderCategory = async (category: Category, direction: -1 | 1) => {
+    const ordered = [...categories].sort((a, b) => a.sort_order - b.sort_order)
+    const index = ordered.findIndex(c => c.id === category.id)
+    const swapIndex = index + direction
+    if (swapIndex < 0 || swapIndex >= ordered.length) return
+    const a = ordered[index]
+    const b = ordered[swapIndex]
+    try {
+      const [ra, rb] = await Promise.all([
+        supabase.from('categories').update({ sort_order: b.sort_order }).eq('id', a.id),
+        supabase.from('categories').update({ sort_order: a.sort_order }).eq('id', b.id),
+      ])
+      if (ra.error) throw ra.error
+      if (rb.error) throw rb.error
+      setCategories(prev =>
+        prev.map(c =>
+          c.id === a.id
+            ? { ...c, sort_order: b.sort_order }
+            : c.id === b.id
+              ? { ...c, sort_order: a.sort_order }
+              : c
+        )
+      )
+    } catch (error) {
+      console.error('Error reordering category:', error)
+      showToast('Error reordering category', 'error')
+    }
+  }
+
+  const handleDeleteCategory = async (category: Category) => {
+    try {
+      const { error } = await supabase
+        .from('categories')
+        .delete()
+        .eq('id', category.id)
+
+      if (error) throw error
+
+      setCategories(prev => prev.filter(c => c.id !== category.id))
+      showToast(`${category.name} deleted`, 'success')
+    } catch (error) {
+      console.error('Error deleting category:', error)
+      showToast('Error deleting category', 'error')
+    }
+  }
+
+  // ---- Phone model management --------------------------------------------
+  const modelsForBrand = (brand: string) =>
+    phoneModels
+      .filter(m => m.brand === brand)
+      .sort((a, b) => a.sort_order - b.sort_order)
+
+  const handleToggleModel = async (model: PhoneModel) => {
+    try {
+      const { error } = await supabase
+        .from('phone_models')
+        .update({ enabled: !model.enabled })
+        .eq('id', model.id)
+
+      if (error) throw error
+
+      setPhoneModels(prev =>
+        prev.map(m =>
+          m.id === model.id ? { ...m, enabled: !m.enabled } : m
+        )
+      )
+      showToast(`${model.name} ${model.enabled ? 'disabled' : 'enabled'}`, 'success')
+    } catch (error) {
+      console.error('Error updating model:', error)
+      showToast('Error updating model', 'error')
+    }
+  }
+
+  const handleAddModel = async () => {
+    const brand = (newModelBrand || modelBrandFilter || categories[0]?.name || '').trim()
+    const name = newModelName.trim()
+    if (!brand) {
+      showToast('Select a brand first', 'error')
+      return
+    }
+    if (!name) {
+      showToast('Enter a model name', 'error')
+      return
+    }
+    setSavingModel(true)
+    try {
+      const maxSort = phoneModels
+        .filter(m => m.brand === brand)
+        .reduce((m, item) => Math.max(m, item.sort_order), 0)
+      const { data, error } = await supabase
+        .from('phone_models')
+        .insert({
+          brand,
+          name,
+          sort_order: maxSort + 1,
+          enabled: true,
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setPhoneModels(prev => [...prev, data])
+      setNewModelName('')
+      showToast(`${name} added`, 'success')
+    } catch (error: any) {
+      console.error('Error adding model:', error)
+      showToast(
+        error?.code === '23505' || error?.message?.includes('duplicate')
+          ? 'That model already exists for this brand'
+          : 'Error adding model',
+        'error'
+      )
+    } finally {
+      setSavingModel(false)
+    }
+  }
+
+  const handleRenameModel = async (model: PhoneModel, name: string) => {
+    const trimmed = name.trim()
+    if (!trimmed || trimmed === model.name) return
+    try {
+      const { error } = await supabase
+        .from('phone_models')
+        .update({ name: trimmed })
+        .eq('id', model.id)
+
+      if (error) throw error
+
+      setPhoneModels(prev =>
+        prev.map(m => (m.id === model.id ? { ...m, name: trimmed } : m))
+      )
+      showToast('Model renamed', 'success')
+    } catch (error) {
+      console.error('Error renaming model:', error)
+      showToast('Error renaming model', 'error')
+    }
+  }
+
+  const handleReorderModel = async (model: PhoneModel, direction: -1 | 1) => {
+    const ordered = modelsForBrand(model.brand)
+    const index = ordered.findIndex(m => m.id === model.id)
+    const swapIndex = index + direction
+    if (index < 0 || swapIndex < 0 || swapIndex >= ordered.length) return
+    const a = ordered[index]
+    const b = ordered[swapIndex]
+    try {
+      const [ra, rb] = await Promise.all([
+        supabase.from('phone_models').update({ sort_order: b.sort_order }).eq('id', a.id),
+        supabase.from('phone_models').update({ sort_order: a.sort_order }).eq('id', b.id),
+      ])
+      if (ra.error) throw ra.error
+      if (rb.error) throw rb.error
+      setPhoneModels(prev =>
+        prev.map(m =>
+          m.id === a.id
+            ? { ...m, sort_order: b.sort_order }
+            : m.id === b.id
+              ? { ...m, sort_order: a.sort_order }
+              : m
+        )
+      )
+    } catch (error) {
+      console.error('Error reordering model:', error)
+      showToast('Error reordering model', 'error')
+    }
+  }
+
+  const handleDeleteModel = async (model: PhoneModel) => {
+    try {
+      const { error } = await supabase
+        .from('phone_models')
+        .delete()
+        .eq('id', model.id)
+
+      if (error) throw error
+
+      setPhoneModels(prev => prev.filter(m => m.id !== model.id))
+      showToast(`${model.name} deleted`, 'success')
+    } catch (error) {
+      console.error('Error deleting model:', error)
+      showToast('Error deleting model', 'error')
+    }
+  }
+
   const handleDeletePost = async (postId: string) => {
     try {
       const { error } = await supabase
@@ -825,6 +1185,7 @@ export default function AdminPanel() {
       title: '',
       description: '',
       category: '',
+      model: '',
       location: '',
       price: '',
       condition: '',
@@ -886,6 +1247,7 @@ export default function AdminPanel() {
           title: newPost.title.trim(),
           description: newPost.description.trim() || null,
           category: newPost.category.trim() || null,
+          model: newPost.model.trim() || null,
           location: newPost.location.trim() || null,
           price,
           images: imageUrls.length > 0 ? imageUrls : null,
@@ -1493,6 +1855,7 @@ export default function AdminPanel() {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Title</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Type</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Category</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Model</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Price</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Likes</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Status</th>
@@ -1537,6 +1900,7 @@ export default function AdminPanel() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-slate-600">{post.category || '-'}</td>
+                        <td className="px-4 py-3 text-slate-600">{post.model || '-'}</td>
                         <td className="px-4 py-3 text-slate-600">{post.price || 0} Birr</td>
                         <td className="px-4 py-3 text-slate-600">{post.likes_count || 0}</td>
                         <td className="px-4 py-3">
@@ -2012,6 +2376,281 @@ export default function AdminPanel() {
             </div>
           </div>
         )
+
+      case 'categories': {
+        const orderedCategories = [...categories].sort((a, b) =>
+          a.enabled === b.enabled
+            ? a.sort_order - b.sort_order
+            : a.enabled
+              ? -1
+              : 1
+        )
+        return (
+          <div className="animate-fadeIn">
+            <div className="card p-6 mb-6">
+              <h3 className="text-lg font-semibold mb-1">Add Category</h3>
+              <p className="text-sm text-slate-500 mb-4">
+                Enabled categories appear to buyers and sellers in the mobile app
+                (Feed, Explore, Create Post). Dealora is phones-first, so the live
+                categories are brands.
+              </p>
+              <div className="flex flex-col md:flex-row gap-3">
+                <input
+                  type="text"
+                  placeholder="Category name (e.g. Tecno)"
+                  className="form-input flex-1"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddCategory()
+                  }}
+                />
+                <input
+                  type="text"
+                  placeholder="Icon key (optional, e.g. android)"
+                  className="form-input md:w-64"
+                  value={newCategoryIcon}
+                  onChange={(e) => setNewCategoryIcon(e.target.value)}
+                />
+                <button
+                  className="btn btn-primary"
+                  onClick={handleAddCategory}
+                  disabled={savingCategory}
+                >
+                  {savingCategory ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                  Add
+                </button>
+              </div>
+            </div>
+
+            <div className="card overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-slate-50">
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Order</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Slug</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Icon</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orderedCategories.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
+                          No categories yet. Add one above.
+                        </td>
+                      </tr>
+                    ) : (
+                      orderedCategories.map(category => (
+                        <tr key={category.id} className="border-b border-slate-100 hover:bg-slate-50">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleReorderCategory(category, -1)}
+                                className="p-1 rounded hover:bg-slate-200 text-slate-500"
+                                title="Move up"
+                              >
+                                <ChevronLeft size={16} className="rotate-90" />
+                              </button>
+                              <span className="text-sm text-slate-500 w-6 text-center">{category.sort_order}</span>
+                              <button
+                                onClick={() => handleReorderCategory(category, 1)}
+                                className="p-1 rounded hover:bg-slate-200 text-slate-500"
+                                title="Move down"
+                              >
+                                <ChevronRight size={16} className="rotate-90" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              type="text"
+                              className="form-input"
+                              defaultValue={category.name}
+                              onBlur={(e) => handleRenameCategory(category, e.target.value)}
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-slate-500 text-sm font-mono">{category.slug}</td>
+                          <td className="px-4 py-3 text-slate-600 text-sm">{category.icon || '-'}</td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => handleToggleCategory(category)}
+                              className={`badge ${category.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}
+                            >
+                              {category.enabled ? 'Enabled' : 'Disabled'}
+                            </button>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => handleDeleteCategory(category)}
+                              className="p-2 rounded-lg hover:bg-red-100 text-red-600"
+                              title="Delete"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      case 'models': {
+        const brandsWithModels = Array.from(new Set(phoneModels.map(m => m.brand)))
+        const brandOptions = Array.from(
+          new Set([...categories.map(c => c.name), ...brandsWithModels])
+        ).sort((a, b) => a.localeCompare(b))
+        const addBrand = newModelBrand || modelBrandFilter || brandOptions[0] || ''
+        const visibleModels = phoneModels
+          .filter(m => !modelBrandFilter || m.brand === modelBrandFilter)
+          .sort((a, b) =>
+            a.brand === b.brand
+              ? a.sort_order - b.sort_order
+              : a.brand.localeCompare(b.brand)
+          )
+        return (
+          <div className="animate-fadeIn">
+            <div className="card p-6 mb-6">
+              <h3 className="text-lg font-semibold mb-1">Add Model</h3>
+              <p className="text-sm text-slate-500 mb-4">
+                Models appear in the mobile app&apos;s Model dropdown after the
+                matching brand is selected. List newest models first.
+              </p>
+              <div className="flex flex-col md:flex-row gap-3">
+                <select
+                  className="form-select md:w-56"
+                  value={addBrand}
+                  onChange={(e) => setNewModelBrand(e.target.value)}
+                >
+                  {brandOptions.length === 0 && (
+                    <option value="">No brands yet</option>
+                  )}
+                  {brandOptions.map(brand => (
+                    <option key={brand} value={brand}>{brand}</option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  placeholder="Model name (e.g. Galaxy S24)"
+                  className="form-input flex-1"
+                  value={newModelName}
+                  onChange={(e) => setNewModelName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddModel()
+                  }}
+                />
+                <button
+                  className="btn btn-primary"
+                  onClick={handleAddModel}
+                  disabled={savingModel}
+                >
+                  {savingModel ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                  Add
+                </button>
+              </div>
+            </div>
+
+            <div className="card overflow-hidden">
+              <div className="p-4 border-b border-slate-200 flex flex-wrap items-center gap-3">
+                <span className="text-sm text-slate-500">Filter by brand</span>
+                <select
+                  className="form-select w-56"
+                  value={modelBrandFilter}
+                  onChange={(e) => setModelBrandFilter(e.target.value)}
+                >
+                  <option value="">All brands</option>
+                  {brandOptions.map(brand => (
+                    <option key={brand} value={brand}>{brand}</option>
+                  ))}
+                </select>
+                <span className="text-sm text-slate-400">
+                  {visibleModels.length} model{visibleModels.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-slate-50">
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Brand</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Order</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Model</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleModels.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
+                          No models yet. Add one above.
+                        </td>
+                      </tr>
+                    ) : (
+                      visibleModels.map(model => (
+                        <tr key={model.id} className="border-b border-slate-100 hover:bg-slate-50">
+                          <td className="px-4 py-3 text-slate-600 text-sm">{model.brand}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleReorderModel(model, -1)}
+                                className="p-1 rounded hover:bg-slate-200 text-slate-500"
+                                title="Move up"
+                              >
+                                <ChevronLeft size={16} className="rotate-90" />
+                              </button>
+                              <span className="text-sm text-slate-500 w-6 text-center">{model.sort_order}</span>
+                              <button
+                                onClick={() => handleReorderModel(model, 1)}
+                                className="p-1 rounded hover:bg-slate-200 text-slate-500"
+                                title="Move down"
+                              >
+                                <ChevronRight size={16} className="rotate-90" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              type="text"
+                              className="form-input"
+                              defaultValue={model.name}
+                              onBlur={(e) => handleRenameModel(model, e.target.value)}
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => handleToggleModel(model)}
+                              className={`badge ${model.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}
+                            >
+                              {model.enabled ? 'Enabled' : 'Disabled'}
+                            </button>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => handleDeleteModel(model)}
+                              className="p-2 rounded-lg hover:bg-red-100 text-red-600"
+                              title="Delete"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )
+      }
 
       case 'settings':
         return (
@@ -2490,10 +3129,16 @@ export default function AdminPanel() {
                         <select
                           className="form-select w-full"
                           value={newPost.category}
-                          onChange={e => setNewPost({ ...newPost, category: e.target.value })}
+                          onChange={e => {
+                            const category = e.target.value
+                            setNewPost({ ...newPost, category, model: '' })
+                          }}
                         >
                           <option value="">Select a category</option>
-                          {POST_CATEGORIES.map(category => (
+                          {(categories.filter(c => c.enabled).map(c => c.name).length > 0
+                            ? categories.filter(c => c.enabled).map(c => c.name)
+                            : POST_CATEGORIES
+                          ).map(category => (
                             <option key={category} value={category}>
                               {category}
                             </option>
@@ -2505,6 +3150,29 @@ export default function AdminPanel() {
                           </p>
                         )}
                       </div>
+
+                      {phoneModels.filter(m => m.enabled && m.brand === newPost.category).length > 0 && (
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">
+                            Model
+                          </label>
+                          <select
+                            className="form-select w-full"
+                            value={newPost.model}
+                            onChange={e => setNewPost({ ...newPost, model: e.target.value })}
+                          >
+                            <option value="">Select a model (optional)</option>
+                            {phoneModels
+                              .filter(m => m.enabled && m.brand === newPost.category)
+                              .sort((a, b) => a.sort_order - b.sort_order)
+                              .map(model => (
+                                <option key={model.id} value={model.name}>
+                                  {model.name}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                      )}
 
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -2688,6 +3356,9 @@ export default function AdminPanel() {
                     )}
                     {newPost.category && (
                       <ReviewRow icon={LayoutGrid} label="Category" value={newPost.category} />
+                    )}
+                    {newPost.model && (
+                      <ReviewRow icon={Smartphone} label="Model" value={newPost.model} />
                     )}
                     {newPost.location.trim() && (
                       <ReviewRow icon={MapPin} label="Location" value={newPost.location.trim()} />

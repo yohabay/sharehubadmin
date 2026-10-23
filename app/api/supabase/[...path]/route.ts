@@ -123,6 +123,14 @@ async function handler(req: NextRequest, { params }: { params: { path: string[] 
   })
 
   const buffer = await upstream.arrayBuffer()
+
+  // PostgREST answers updates/deletes without a representation with 204 (and
+  // conditional requests with 304). The Response constructor rejects those
+  // statuses when a body is present, so return a bodyless response instead.
+  if ([204, 205, 304].includes(upstream.status)) {
+    return new NextResponse(null, { status: upstream.status, headers: resHeaders })
+  }
+
   return new NextResponse(buffer, { status: upstream.status, headers: resHeaders })
 }
 

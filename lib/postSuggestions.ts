@@ -138,6 +138,9 @@ export function generateTitleSuggestions(partialTitle: string, type: PostType): 
   return Array.from(new Set([...tailored, ...pool])).slice(0, 4)
 }
 
+// Fallback category list. The live list is the enabled rows of the
+// `categories` table (managed in the admin Categories section); this array is
+// only used when that fetch fails or returns nothing.
 export const POST_CATEGORIES = [
   'Electronics',
   'Phones',

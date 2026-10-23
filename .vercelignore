@@ -1,0 +1,16 @@
+# Never upload local secrets to Vercel
+.env
+.env.local
+.env*.local
+
+# Dependencies / build output
+node_modules
+.next
+out
+build
+
+# VCS / misc
+.git
+.vercel
+.DS_Store
+*.log

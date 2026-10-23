@@ -28,6 +28,7 @@ interface PostDetail {
   title: string;
   description: string;
   category: string;
+  model: string | null;
   location: string;
   price: number;
   images: string[];
@@ -69,19 +70,16 @@ export default function PostDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [commentToDelete, setCommentToDelete] = useState<string | null>(null);
-  const categories = [
-    "Phones",
-    "Laptops",
-    "Headphones & Speakers",
-    "Power Banks & USB Drives",
-    "Other Electronics",
-    "Electronics",
-  ];
+  const [categories, setCategories] = useState<string[]>(["Samsung", "iPhone"]);
+  const [models, setModels] = useState<
+    { id: string; brand: string; name: string; sort_order: number }[]
+  >([]);
 
   const [formData, setFormData] = useState({
     title: "",
     description: "",
     category: "",
+    model: "",
     location: "",
     price: 0,
     status: "active",
@@ -97,6 +95,31 @@ export default function PostDetailPage() {
       fetchComments();
     }
   }, [postId]);
+
+  // Keep the brand + model pickers in sync with the admin-managed catalog.
+  useEffect(() => {
+    async function fetchCatalog() {
+      const [categoriesResult, modelsResult] = await Promise.all([
+        supabaseClient
+          .from("categories")
+          .select("name")
+          .eq("enabled", true)
+          .order("sort_order", { ascending: true }),
+        supabaseClient
+          .from("phone_models")
+          .select("id, brand, name, sort_order")
+          .eq("enabled", true)
+          .order("sort_order", { ascending: true }),
+      ]);
+
+      const names = (categoriesResult.data || [])
+        .map((row) => row.name as string)
+        .filter(Boolean);
+      if (names.length > 0) setCategories(names);
+      if (modelsResult.data) setModels(modelsResult.data);
+    }
+    fetchCatalog();
+  }, [supabaseClient]);
 
   async function fetchPost() {
     setLoading(true);
@@ -119,6 +142,7 @@ export default function PostDetailPage() {
         title: postData.title || "",
         description: postData.description || "",
         category: postData.category || "",
+        model: postData.model || "",
         location: postData.location || "",
         price: postData.price || 0,
         status: postData.status || "active",
@@ -158,6 +182,7 @@ export default function PostDetailPage() {
         title: formData.title,
         description: formData.description,
         category: formData.category,
+        model: formData.model || null,
         location: formData.location,
         price: formData.price,
         status: formData.status,
@@ -385,6 +410,11 @@ export default function PostDetailPage() {
                   <span className="px-3 py-1 rounded-full text-sm bg-slate-100 text-slate-700">
                     {post.category}
                   </span>
+                  {post.model && (
+                    <span className="px-3 py-1 rounded-full text-sm bg-slate-100 text-slate-700">
+                      {post.model}
+                    </span>
+                  )}
 
                   {/* Status Dropdown */}
                   <div className="relative ml-auto">
@@ -634,7 +664,11 @@ export default function PostDetailPage() {
                     <select
                       value={formData.category}
                       onChange={(e) =>
-                        setFormData({ ...formData, category: e.target.value })
+                        setFormData({
+                          ...formData,
+                          category: e.target.value,
+                          model: "",
+                        })
                       }
                       className="w-full border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500"
                     >
@@ -646,6 +680,42 @@ export default function PostDetailPage() {
                       ))}
                     </select>
                   </div>
+
+                  {(models.some((m) => m.brand === formData.category) ||
+                    formData.model) && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">
+                        Model
+                      </label>
+                      <select
+                        value={formData.model}
+                        onChange={(e) =>
+                          setFormData({ ...formData, model: e.target.value })
+                        }
+                        className="w-full border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">No model</option>
+                        {formData.model &&
+                          !models.some(
+                            (m) =>
+                              m.brand === formData.category &&
+                              m.name === formData.model,
+                          ) && (
+                            <option value={formData.model}>
+                              {formData.model}
+                            </option>
+                          )}
+                        {models
+                          .filter((m) => m.brand === formData.category)
+                          .sort((a, b) => a.sort_order - b.sort_order)
+                          .map((model) => (
+                            <option key={model.id} value={model.name}>
+                              {model.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-2">
